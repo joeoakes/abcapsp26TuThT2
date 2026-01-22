@@ -154,7 +154,7 @@ static void draw_player_goal(SDL_Renderer* r, int px, int py) {
     CELL - 16,
     CELL - 16
   };
-  SDL_SetRenderDrawColor(r, 220, 60, 70, 255);
+  SDL_SetRenderDrawColor(r, 255, 255, 0, 255);
   SDL_RenderFillRect(r, &p);
 }
 

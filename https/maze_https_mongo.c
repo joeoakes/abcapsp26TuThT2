@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <microhttpd.h>
 #include <mongoc/mongoc.h>
 #include <bson/bson.h>
@@ -10,14 +11,33 @@
 #define POSTBUFFERSIZE  4096
 #define MAXNAMESIZE     64
 #define MAXANSWERSIZE   512
+#define DEFAULT_MONGO_URI "mongodb://localhost:27017"
+#define DEFAULT_MONGO_DB  "maze"
+#define DEFAULT_MONGO_COL "moves"
 
 static const char *cert_file = "certs/server.crt";
 static const char *key_file  = "certs/server.key";
+static mongoc_client_t *mongo_client;
 
 struct connection_info {
     char *data;
     size_t size;
 };
+
+static char *read_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = malloc(n + 1);
+    if (!buf) { fclose(f); return NULL; }
+    if (fread(buf, 1, n, f) != (size_t)n) { fclose(f); free(buf); return NULL; }
+    buf[n] = '\0';
+    fclose(f);
+    return buf;
+}
+
 
 static void get_utc_iso8601(char *buf, size_t len) {
     time_t now = time(NULL);
@@ -25,6 +45,14 @@ static void get_utc_iso8601(char *buf, size_t len) {
     gmtime_r(&now, &tm);
     strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", &tm);
 }
+
+struct app_config {
+    const char *mongo_uri;
+    const char *mongo_db;
+    const char *mongo_col;
+};
+
+static struct app_config config;
 
 static int handle_post(void *cls,
                        struct MHD_Connection *connection,
@@ -70,16 +98,13 @@ static int handle_post(void *cls,
     get_utc_iso8601(ts, sizeof(ts));
     BSON_APPEND_UTF8(doc, "received_at", ts);
 
-    mongoc_client_t *client = mongoc_client_new(getenv("MONGO_URI"));
     mongoc_collection_t *col =
-        mongoc_client_get_collection(client,
-                                      getenv("MONGO_DB"),
-                                      getenv("MONGO_COL"));
+        mongoc_client_get_collection(mongo_client,
+                                    config.mongo_db,
+                                    config.mongo_col);
 
-    mongoc_collection_insert_one(col, doc, NULL, NULL, &error);
-
+    mongoc_collection_insert_one(col, doc, NULL, NULL, &error)
     mongoc_collection_destroy(col);
-    mongoc_client_destroy(client);
     bson_destroy(doc);
 
     const char *response = "{\"status\":\"ok\"}";
@@ -99,15 +124,33 @@ static int handle_post(void *cls,
 }
 
 int main(void) {
-    const char *mongo_uri = getenv("MONGO_URI");
-    const char *mongo_db  = getenv("MONGO_DB");
-    const char *mongo_col = getenv("MONGO_COL");
+    config.mongo_uri = getenv("MONGO_URI");
+    if (!config.mongo_uri || !*config.mongo_uri)
+        config.mongo_uri = DEFAULT_MONGO_URI;
 
-    if (!mongo_uri) mongo_uri = "mongodb://localhost:27017";
-    if (!mongo_db)  mongo_db  = "maze";
-    if (!mongo_col) mongo_col = "moves";
+    config.mongo_db = getenv("MONGO_DB");
+    if (!config.mongo_db || !*config.mongo_db)
+        config.mongo_db = DEFAULT_MONGO_DB;
+
+    config.mongo_col = getenv("MONGO_COL");
+    if (!config.mongo_col || !*config.mongo_col)
+        config.mongo_col = DEFAULT_MONGO_COL;
+
 
     mongoc_init();
+    mongo_client = mongoc_client_new(config.mongo_uri);
+    if (!mongo_client) {
+        fprintf(stderr, "Failed to create MongoDB client\n");
+        return 1;
+    }
+
+	char *cert_pem = read_file(cert_file);
+	char *key_pem  = read_file(key_file);
+	if (!cert_pem || !key_pem) {
+    	fprintf(stderr, "Failed to read cert/key files\n");
+    	return 1;
+	}
+
 
     struct MHD_Daemon *daemon = MHD_start_daemon(
         MHD_USE_THREAD_PER_CONNECTION | MHD_USE_TLS,
@@ -115,9 +158,9 @@ int main(void) {
         NULL, NULL,
         &handle_post, NULL,
         MHD_OPTION_HTTPS_MEM_CERT,
-        cert_file,
+        cert_pem,
         MHD_OPTION_HTTPS_MEM_KEY,
-        key_file,
+        key_pem,
         MHD_OPTION_END);
 
     if (!daemon) {
@@ -129,6 +172,8 @@ int main(void) {
     getchar();
 
     MHD_stop_daemon(daemon);
+	free(cert_pem);
+	free(key_pem);
     mongoc_cleanup();
     return 0;
 }

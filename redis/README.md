@@ -1,187 +1,201 @@
-# abcapsp26FriT1
+# Redis Installation & Verification Guide
+## WSL (Ubuntu) and macOS
 
-# 🐾 Mini-Pupper Swarm Exploration with Secure AI-RAG Diagnostics
+This guide walks you through **installing Redis**, **starting the service**, and **verifying it works** on:
 
-**Senior Capstone – Spring 2026 Friday Team 1**  
-**Penn State Abington – CMPSC & IT**
-
----
-
-## 📌 Project Overview
-
-This project implements a **secure, autonomous swarm of Mini-Pupper quadruped robots** capable of **parallel maze exploration** using **reinforcement learning**, **ROS2**, and **AI-assisted reasoning via RAG (Retrieval-Augmented Generation)**.
-
-Robots operate locally with real-time autonomy while securely logging mission telemetry to a centralized system. A high-performance AI station performs **operator reasoning, diagnostics, and shared swarm intelligence** using vector databases.
+- Windows Subsystem for Linux (WSL2 – Ubuntu)
+- macOS (Intel or Apple Silicon)
 
 ---
 
-## 🎯 Objectives
+## Part 1: Install Redis on WSL (Ubuntu)
 
-- Autonomous **multi-robot exploration** of an augmented-reality maze  
-- Secure **robot-to-cloud telemetry and logging**
-- **AI-assisted diagnostics** and mission reasoning using RAG
-- Full **operational security** using certificates and mTLS
-- Production-quality **testing, documentation, and DevOps workflow**
-- Real-time **GUI mission dashboard** and teleoperation
+### 1. Open WSL
+From Windows Terminal, open your Ubuntu distribution.
 
----
-
-## 🐕 Mini-Pupper Robot Platform
-
-**Hardware**
-- Raspberry Pi 4 Model B
-- Quad-core ARM Cortex-A72 @ 1.5 GHz
-- Camera + LiDAR
-- 12 × Micro Servo Motors
-- Dual power rails:
-  - 5V → Raspberry Pi
-  - 6V → Servos
-- Wi-Fi (2.4 / 5 GHz)
-
-**Software**
-- Ubuntu Linux
-- ROS2 (Foxy / Humble)
-- Python
-- AprilTags for identification & telemetry
-- SSH for secure remote access
-- X.509 digital certificates for identity
-
-**Capabilities**
-- Local autonomy
-- Sensor fusion
-- Secure communications
-- Swarm participation
+Verify:
+```bash
+lsb_release -a
+```
 
 ---
 
-## 🧠 AI & Compute Infrastructure
-
-### Quantum X Computer I9 (Telemetry & Logging)
-- NVIDIA RTX 4090 GPU
-- Mission + telemetry logging service
-- MongoDB backend
-- VPN-secured SSH access
-- mTLS (mutual authentication)
-- Certificate-based identity
-
-### AI Station Spark (RAG & Reasoning)
-- Spark DGX Supercomputer
-- GB10 Grace Blackwell Superchip
-- ~1 Petaflop performance
-- 128 GB Unified LPDDR5X memory
-- Secure VPN connectivity
-
-**AI Services**
-- RAG-based operator reasoning
-- Diagnostics and anomaly detection
-- Redis vector database for shared swarm knowledge
+### 2. Update packages
+```bash
+sudo apt update && sudo apt upgrade -y
+```
 
 ---
 
-## 🎮 Teleoperation & GUI Dashboard
+### 3. Install Redis
+```bash
+sudo apt install redis-server -y
+```
 
-**Features**
-- Raspberry Pi Game HAT controller
-- Heads-Up Mission Dashboard
-- Real-time robot health monitoring
-- Mission activity visualization
-- Log inspection and replay
-
-**Tech Stack**
-- Python Plotly Dash **or** React + ECharts
-- FastAPI WebSockets for real-time updates
-- Secure backend APIs
-- MongoDB log integration
+Verify installation:
+```bash
+redis-server --version
+```
 
 ---
 
-## 🔐 Security Architecture
+### 4. Start Redis
 
-- SSH for remote administration
-- VPN for network isolation
-- mTLS (mutual TLS):
-  - Server proves identity
-  - Robot/client proves identity
-- X.509 certificates for every robot
-- Zero-trust communication model
+Most WSL systems:
+```bash
+sudo service redis-server start
+```
 
----
+Check status:
+```bash
+sudo service redis-server status
+```
 
-## 🧪 Testing & Quality Assurance
-
-The project follows **industry-grade testing standards**:
-
-- Unit Testing
-- Integration Testing
-- System Testing
-- Regression Testing
-
-**Tooling**
-- Python testing frameworks
-- CI-ready structure
-- Full code coverage targets
+If systemd is not enabled:
+```bash
+redis-server
+```
+(Leave the terminal open.)
 
 ---
 
-## 📦 Project Management & DevOps
+### 5. Test Redis (WSL)
 
-- All code hosted on **GitHub**
-- Python dependency management via **Poetry**
-- Full **PyDoc documentation**
-- SCRUM methodology
-  - Stand-ups twice per week
-- Issue tracking and milestones
-- Versioned releases
+```bash
+redis-cli
+```
 
----
+Inside Redis:
+```text
+ping
+```
+Expected output:
+```text
+PONG
+```
 
-## 📚 Key Technologies
-
-- Robotics: Quadrupeds, ROS2
-- AI/ML: Reinforcement Learning, RAG
-- Databases: MongoDB, Redis (Vector DB)
-- Security: VPN, SSH, mTLS, Certificates
-- Web: FastAPI, WebSockets
-- Visualization: Plotly Dash / React + ECharts
-
----
-
-## 🚀 Expected Outcomes
-
-- Demonstration of **parallel swarm exploration**
-- Secure, real-world robotics deployment
-- AI-assisted diagnostics using modern RAG pipelines
-- Fully documented, production-ready system
-- Scalable foundation for future research
+Test data:
+```text
+set test "hello redis"
+get test
+```
 
 ---
 
-## 👨‍🏫 Academic Context
+## Part 2: Install Redis on macOS
 
-This project serves as a **Senior Capstone** for students in:
+### 1. Install Homebrew (if needed)
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
 
-- Computer Science (CMPSC)
-- Information Technology (IT)
-
-Emphasis is placed on:
-- Systems engineering
-- Secure distributed computing
-- Robotics + AI integration
-- Professional software practices
-
----
-
-## 📜 License
-
-This project is developed for academic and research purposes.  
-Licensing will be determined prior to public release.
+Verify:
+```bash
+brew --version
+```
 
 ---
 
-## ✨ Acknowledgments
+### 2. Install Redis
+```bash
+brew update
+brew install redis
+```
 
-- Penn State Abington
-- CMPSC & IT Programs
-- Open-source robotics and AI communities
+Verify:
+```bash
+redis-server --version
+```
 
 ---
+
+### 3. Start Redis
+
+Start as a background service:
+```bash
+brew services start redis
+```
+
+Or start manually:
+```bash
+redis-server
+```
+
+---
+
+### 4. Test Redis (macOS)
+
+```bash
+redis-cli ping
+```
+
+Expected output:
+```text
+PONG
+```
+
+Test data:
+```bash
+redis-cli
+set test "hello mac redis"
+get test
+```
+
+---
+
+## Part 3: Cross‑Platform Verification
+
+### Check Redis is listening on port 6379
+
+**WSL / Linux:**
+```bash
+ss -lntp | grep 6379
+```
+
+**macOS:**
+```bash
+lsof -i :6379
+```
+
+---
+
+## Part 4: Common Troubleshooting
+
+### Redis not responding?
+- Make sure the server is running
+- Confirm port `6379`
+- Use `127.0.0.1` instead of `localhost` if needed
+
+### Reset Redis
+```bash
+redis-cli FLUSHALL
+```
+
+---
+
+## Part 5: Quick Python Test (Optional)
+
+```python
+import redis
+
+r = redis.Redis(host="localhost", port=6379)
+print(r.ping())
+```
+
+Expected:
+```text
+True
+```
+
+---
+
+## Summary
+
+Redis is now installed, running, and verified on your system.
+
+You can safely use it for:
+- Robotics mission logging
+- AI agents
+- C / Python / ROS2 projects
+
+Happy hacking!

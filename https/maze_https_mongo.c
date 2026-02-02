@@ -103,7 +103,7 @@ static int handle_post(void *cls,
                                     config.mongo_db,
                                     config.mongo_col);
 
-    mongoc_collection_insert_one(col, doc, NULL, NULL, &error)
+    mongoc_collection_insert_one(col, doc, NULL, NULL, &error);
     mongoc_collection_destroy(col);
     bson_destroy(doc);
 

@@ -17,7 +17,8 @@ Robots operate locally with real-time autonomy while securely logging mission te
 
 ## 🧩 System Architecture Overview
 
-![Mini-Pupper Secure Swarm Architecture](Entities.png)
+<img width="827" height="402" alt="capstone" src="https://github.com/user-attachments/assets/ccc5cb5c-e2b6-4051-a52b-5056c62e15a6" />
+
 
 **Figure:** Secure Mini-Pupper swarm architecture showing robot control, telemetry flow, logging infrastructure, AI RAG server, and secure remote access.
 

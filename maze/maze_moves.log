@@ -1,0 +1,414 @@
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":1},
+  "player": {"position":{"x":0,"y":1}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:33Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":2},
+  "player": {"position":{"x":1,"y":1}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:33Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":3},
+  "player": {"position":{"x":1,"y":0}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:33Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":4},
+  "player": {"position":{"x":2,"y":0}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:34Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":5},
+  "player": {"position":{"x":2,"y":1}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:41Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":6},
+  "player": {"position":{"x":2,"y":2}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:41Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":7},
+  "player": {"position":{"x":3,"y":2}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:42Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":8},
+  "player": {"position":{"x":4,"y":2}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:42Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":9},
+  "player": {"position":{"x":5,"y":2}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:42Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":10},
+  "player": {"position":{"x":5,"y":1}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:43Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":11},
+  "player": {"position":{"x":4,"y":1}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:43Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":12},
+  "player": {"position":{"x":4,"y":0}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:43Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":13},
+  "player": {"position":{"x":5,"y":0}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:44Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":14},
+  "player": {"position":{"x":6,"y":0}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:44Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":15},
+  "player": {"position":{"x":7,"y":0}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:44Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":16},
+  "player": {"position":{"x":8,"y":0}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:44Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":17},
+  "player": {"position":{"x":8,"y":1}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:45Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":18},
+  "player": {"position":{"x":8,"y":2}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:45Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":19},
+  "player": {"position":{"x":8,"y":3}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:45Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":20},
+  "player": {"position":{"x":8,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:45Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":21},
+  "player": {"position":{"x":7,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:45Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":22},
+  "player": {"position":{"x":6,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:46Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":23},
+  "player": {"position":{"x":5,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:46Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":24},
+  "player": {"position":{"x":4,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:46Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":25},
+  "player": {"position":{"x":3,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:46Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":26},
+  "player": {"position":{"x":2,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:46Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":27},
+  "player": {"position":{"x":1,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:46Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":28},
+  "player": {"position":{"x":0,"y":4}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:46Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":29},
+  "player": {"position":{"x":0,"y":5}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:46Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":30},
+  "player": {"position":{"x":0,"y":6}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:47Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":31},
+  "player": {"position":{"x":0,"y":7}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:47Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":32},
+  "player": {"position":{"x":1,"y":7}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:47Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":33},
+  "player": {"position":{"x":1,"y":8}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:47Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":34},
+  "player": {"position":{"x":2,"y":8}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:47Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":35},
+  "player": {"position":{"x":3,"y":8}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:48Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":36},
+  "player": {"position":{"x":3,"y":9}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:48Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":37},
+  "player": {"position":{"x":3,"y":10}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:48Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":38},
+  "player": {"position":{"x":2,"y":10}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:48Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":39},
+  "player": {"position":{"x":1,"y":10}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:48Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":40},
+  "player": {"position":{"x":1,"y":11}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:48Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":41},
+  "player": {"position":{"x":0,"y":11}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:49Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":42},
+  "player": {"position":{"x":0,"y":12}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:49Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":43},
+  "player": {"position":{"x":1,"y":12}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:49Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":44},
+  "player": {"position":{"x":1,"y":13}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:49Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":45},
+  "player": {"position":{"x":1,"y":14}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:50Z"
+}
+
+{
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":46},
+  "player": {"position":{"x":2,"y":14}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:18:50Z"
+}
+

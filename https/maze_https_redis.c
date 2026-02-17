@@ -166,4 +166,14 @@ int main(void) {
     return 1;
   }
 
-  printf("HTTPS Redis mis
+  printf("HTTPS Redis mission server running on port 8444\n");
+
+  while (!g_stop)
+    sleep(1);
+
+  MHD_stop_daemon(d);
+  redisFree(redis);
+  free(server_crt_pem);
+  free(server_key_pem);
+  return 0;
+}

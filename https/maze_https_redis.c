@@ -24,6 +24,28 @@ static void on_sigint(int signo) {
   g_stop = 1;
 }
 
+/* ================= Helpers ================= */
+
+static char* read_file(const char* path) {
+  FILE* f = fopen(path, "rb");
+  if (!f) return NULL;
+
+  if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
+  long n = ftell(f);
+  if (n < 0) { fclose(f); return NULL; }
+  rewind(f);
+
+  char* buf = (char*)malloc((size_t)n + 1);
+  if (!buf) { fclose(f); return NULL; }
+
+  size_t got = fread(buf, 1, (size_t)n, f);
+  fclose(f);
+  if (got != (size_t)n) { free(buf); return NULL; }
+
+  buf[n] = '\0';
+  return buf;
+}
+
 /* ================= Responses ================= */
 
 static enum MHD_Result respond_text(
@@ -98,10 +120,29 @@ int main(void) {
   signal(SIGINT, on_sigint);
   signal(SIGTERM, on_sigint);
 
-  /* Redis is local-only (correct) */
+  /* Load TLS cert + key (same pattern as Mongo server) */
+  const char* crt_path = getenv("TLS_CERT");
+  const char* key_path = getenv("TLS_KEY");
+
+  if (!crt_path) crt_path = "certs/server.crt";
+  if (!key_path) key_path = "certs/server.key";
+
+  char* server_crt_pem = read_file(crt_path);
+  char* server_key_pem = read_file(key_path);
+
+  if (!server_crt_pem || !server_key_pem) {
+    fprintf(stderr, "Failed to read TLS files: %s %s\n", crt_path, key_path);
+    free(server_crt_pem);
+    free(server_key_pem);
+    return 1;
+  }
+
+  /* Redis connection */
   redisContext* redis = redisConnect("10.170.8.109", 6379);
   if (!redis || redis->err) {
     fprintf(stderr, "Redis connection failed\n");
+    free(server_crt_pem);
+    free(server_key_pem);
     return 1;
   }
 
@@ -112,23 +153,17 @@ int main(void) {
     8444,
     NULL, NULL,
     &handler, &rctx,
-    MHD_OPTION_HTTPS_MEM_KEY,  /* TLS key PEM */,
-    MHD_OPTION_HTTPS_MEM_CERT, /* TLS cert PEM */,
+    MHD_OPTION_HTTPS_MEM_KEY,  server_key_pem,
+    MHD_OPTION_HTTPS_MEM_CERT, server_crt_pem,
     MHD_OPTION_END
   );
 
   if (!d) {
     fprintf(stderr, "Failed to start HTTPS server\n");
     redisFree(redis);
+    free(server_crt_pem);
+    free(server_key_pem);
     return 1;
   }
 
-  printf("HTTPS Redis mission server running on port 8444\n");
-
-  while (!g_stop)
-    sleep(1);
-
-  MHD_stop_daemon(d);
-  redisFree(redis);
-  return 0;
-}
+  printf("HTTPS Redis mis

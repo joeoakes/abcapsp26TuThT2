@@ -1,6 +1,6 @@
 // maze_https_redis.c
-// HTTPS telemetry server: POST JSON to /move, store in Redis (localhost).
-// Requires libmicrohttpd with TLS + hiredis.
+// HTTPS server that writes mission data to Redis.
+// NO JSON parsing. NO telemetry ingestion.
 
 #include <microhttpd.h>
 #include <hiredis/hiredis.h>
@@ -11,8 +11,7 @@
 #include <stdbool.h>
 #include <signal.h>
 #include <time.h>
-
-#include <cjson/cJSON.h>
+#include <unistd.h>
 
 #ifndef MHD_HTTP_OK
 #define MHD_HTTP_OK 200
@@ -25,30 +24,19 @@ static void on_sigint(int signo) {
   g_stop = 1;
 }
 
-static enum MHD_Result respond_text(struct MHD_Connection* c, unsigned int code, const char* text) {
+/* ================= Responses ================= */
+
+static enum MHD_Result respond_text(
+  struct MHD_Connection* c,
+  unsigned int code,
+  const char* text
+) {
   struct MHD_Response* r =
     MHD_create_response_from_buffer(strlen(text), (void*)text, MHD_RESPMEM_MUST_COPY);
-  MHD_add_response_header(r, "Content-Type", "text/plain");
   enum MHD_Result ret = MHD_queue_response(c, code, r);
   MHD_destroy_response(r);
   return ret;
 }
-
-static enum MHD_Result respond_json(struct MHD_Connection* c, unsigned int code, const char* json) {
-  struct MHD_Response* r =
-    MHD_create_response_from_buffer(strlen(json), (void*)json, MHD_RESPMEM_MUST_COPY);
-  MHD_add_response_header(r, "Content-Type", "application/json");
-  enum MHD_Result ret = MHD_queue_response(c, code, r);
-  MHD_destroy_response(r);
-  return ret;
-}
-
-/* ================= Request body buffer ================= */
-
-typedef struct {
-  char* data;
-  size_t size;
-} BodyBuf;
 
 /* ================= Redis context ================= */
 
@@ -56,51 +44,7 @@ typedef struct {
   redisContext* redis;
 } RedisCtx;
 
-/* ================= Handle POST /move ================= */
-
-static enum MHD_Result handle_post_move(struct MHD_Connection* c, RedisCtx* rctx, const char* body) {
-  if (!body || !*body)
-    return respond_text(c, MHD_HTTP_BAD_REQUEST, "Empty body\n");
-
-  cJSON* json = cJSON_Parse(body);
-  if (!json)
-    return respond_text(c, MHD_HTTP_BAD_REQUEST, "Invalid JSON\n");
-
-  const cJSON* device = cJSON_GetObjectItem(json, "device_id");
-  const cJSON* player = cJSON_GetObjectItem(json, "player");
-  const cJSON* won    = cJSON_GetObjectItem(json, "won");
-
-  if (!device || !player) {
-    cJSON_Delete(json);
-    return respond_text(c, MHD_HTTP_BAD_REQUEST, "Missing fields\n");
-  }
-
-  int x = cJSON_GetObjectItem(player, "x")->valueint;
-  int y = cJSON_GetObjectItem(player, "y")->valueint;
-
-  time_t now = time(NULL);
-
-  /* Write to Redis */
-  redisCommand(
-    rctx->redis,
-    "HSET team2ttmission:LIVE "
-    "device_id %s "
-    "player_x %d "
-    "player_y %d "
-    "won %s "
-    "last_update %ld",
-    device->valuestring,
-    x,
-    y,
-    (won && cJSON_IsTrue(won)) ? "true" : "false",
-    (long)now
-  );
-
-  cJSON_Delete(json);
-  return respond_json(c, MHD_HTTP_OK, "{\"ok\":true}\n");
-}
-
-/* ================= Main request handler ================= */
+/* ================= Request handler ================= */
 
 static enum MHD_Result handler(
   void* cls,
@@ -113,39 +57,39 @@ static enum MHD_Result handler(
   void** con_cls
 ) {
   (void)version;
+  (void)upload_data;
+  (void)upload_data_size;
+  (void)con_cls;
+
   RedisCtx* rctx = (RedisCtx*)cls;
-
-  if (strcmp(url, "/move") != 0)
-    return respond_text(c, MHD_HTTP_NOT_FOUND, "Not found\n");
-
-  if (strcmp(method, "GET") == 0)
-    return respond_text(c, MHD_HTTP_OK, "POST JSON to /move\n");
 
   if (strcmp(method, "POST") != 0)
     return respond_text(c, MHD_HTTP_METHOD_NOT_ALLOWED, "Use POST\n");
 
-  if (*con_cls == NULL) {
-    BodyBuf* b = calloc(1, sizeof(BodyBuf));
-    *con_cls = b;
-    return MHD_YES;
+  /* Example endpoint: POST /mission_end */
+  if (strcmp(url, "/mission_end") == 0) {
+
+    time_t now = time(NULL);
+
+    redisCommand(
+      rctx->redis,
+      "HSET team2ttmission:TEST_MISSION "
+      "mission_id %s "
+      "robot_id %s "
+      "mission_result %s "
+      "abort_reason %s "
+      "end_time %ld",
+      "TEST_MISSION",
+      "TEST_ROBOT",
+      "success",
+      "user exited",
+      (long)now
+    );
+
+    return respond_text(c, MHD_HTTP_OK, "Mission recorded\n");
   }
 
-  BodyBuf* b = (BodyBuf*)(*con_cls);
-
-  if (*upload_data_size != 0) {
-    b->data = realloc(b->data, b->size + *upload_data_size + 1);
-    memcpy(b->data + b->size, upload_data, *upload_data_size);
-    b->size += *upload_data_size;
-    b->data[b->size] = 0;
-    *upload_data_size = 0;
-    return MHD_YES;
-  }
-
-  enum MHD_Result ret = handle_post_move(c, rctx, b->data);
-  free(b->data);
-  free(b);
-  *con_cls = NULL;
-  return ret;
+  return respond_text(c, MHD_HTTP_NOT_FOUND, "Not found\n");
 }
 
 /* ================= main ================= */
@@ -154,9 +98,10 @@ int main(void) {
   signal(SIGINT, on_sigint);
   signal(SIGTERM, on_sigint);
 
-  redisContext* redis = redisConnect("127.0.0.1", 6379);
+  /* Redis is local-only (correct) */
+  redisContext* redis = redisConnect("10.170.8.109", 6379);
   if (!redis || redis->err) {
-    fprintf(stderr, "Redis error\n");
+    fprintf(stderr, "Redis connection failed\n");
     return 1;
   }
 
@@ -167,8 +112,8 @@ int main(void) {
     8444,
     NULL, NULL,
     &handler, &rctx,
-    MHD_OPTION_HTTPS_MEM_KEY,  /* your key */,
-    MHD_OPTION_HTTPS_MEM_CERT, /* your cert */,
+    MHD_OPTION_HTTPS_MEM_KEY,  /* TLS key PEM */,
+    MHD_OPTION_HTTPS_MEM_CERT, /* TLS cert PEM */,
     MHD_OPTION_END
   );
 
@@ -178,9 +123,10 @@ int main(void) {
     return 1;
   }
 
-  printf("HTTPS Redis bridge listening on 8444\n");
+  printf("HTTPS Redis mission server running on port 8444\n");
 
-  while (!g_stop) sleep(1);
+  while (!g_stop)
+    sleep(1);
 
   MHD_stop_daemon(d);
   redisFree(redis);

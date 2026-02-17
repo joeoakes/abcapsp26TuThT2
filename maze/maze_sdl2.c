@@ -23,6 +23,10 @@
 // Uses HTTPS to your server on port 8444. Endpoint: /move
 #define TELEMETRY_URL "https://10.170.8.101:8444/move"
 #define DEVICE_ID     "mini-pupper-01"
+// === AI Mission config ===
+// AI server writes mission data to Redis internally
+#define AI_MISSION_URL "https://10.170.8.109:8444/mission_end"
+
 
 // Wall bitmask for each cell
 enum { WALL_N = 1, WALL_E = 2, WALL_S = 4, WALL_W = 8 };
@@ -273,6 +277,39 @@ static void telemetry_send(int px, int py, bool won) {
   curl_slist_free_all(headers);
 }
 
+
+// Send mission end event to AI server (which writes to Redis)
+static void ai_mission_send(const char* result) {
+  if (!g_curl) return;
+
+  char body[128];
+  snprintf(body, sizeof(body),
+           "device_id=%s&result=%s",
+           DEVICE_ID,
+           result);
+
+  struct curl_slist* headers = NULL;
+  headers = curl_slist_append(headers,
+                             "Content-Type: application/x-www-form-urlencoded");
+
+  curl_easy_setopt(g_curl, CURLOPT_URL, AI_MISSION_URL);
+  curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, body);
+  curl_easy_setopt(g_curl, CURLOPT_POSTFIELDSIZE, (long)strlen(body));
+
+  CURLcode res = curl_easy_perform(g_curl);
+
+  if (res != CURLE_OK) {
+    fprintf(stderr, "ai_mission_send: curl error: %s\n",
+            curl_easy_strerror(res));
+  }
+
+  curl_slist_free_all(headers);
+
+  // IMPORTANT: restore telemetry URL so existing code is unaffected
+  curl_easy_setopt(g_curl, CURLOPT_URL, TELEMETRY_URL);
+}
+
 /* ================= main ================= */
 
 int main(int argc, char** argv) {
@@ -325,11 +362,20 @@ int main(int argc, char** argv) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_QUIT) running = false;
+      
+      if (e.type == SDL_QUIT) {
+       ai_mission_send("aborted");
+       running = false;
+        }
 
       if (e.type == SDL_KEYDOWN) {
         SDL_Keycode k = e.key.keysym.sym;
 
         if (k == SDLK_ESCAPE) running = false;
+	if (k == SDLK_ESCAPE) {
+ 	 ai_mission_send("aborted");
+ 	 running = false;
+	}
 
         if (k == SDLK_r) {
           regenerate(&px, &py, win);
@@ -352,6 +398,7 @@ int main(int argc, char** argv) {
             won = true;
             SDL_SetWindowTitle(win, "You win! Press R to regenerate, Esc to quit");
             telemetry_send(px, py, true);
+	    ai_mission_send("success");
           }
         }
       }

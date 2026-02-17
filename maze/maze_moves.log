@@ -412,3 +412,12 @@
   "timestamp":"2026-02-15T23:18:50Z"
 }
 
+{
+  "session_id": "cf627e10-7087-484c-a371-21440d453a50",
+  "event_type": "player_move",
+  "input": {"device":"keyboard","move_sequence":1},
+  "player": {"position":{"x":0,"y":1}},
+  "goal_reached":false,
+  "timestamp":"2026-02-15T23:22:08Z"
+}
+

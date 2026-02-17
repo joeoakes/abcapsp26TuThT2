@@ -138,7 +138,7 @@ int main(void) {
   }
 
   /* Redis connection */
-  redisContext* redis = redisConnect("10.170.8.109", 6379);
+  redisContext* redis = redisConnect("localhost", 6379);
   if (!redis || redis->err) {
     fprintf(stderr, "Redis connection failed\n");
     free(server_crt_pem);

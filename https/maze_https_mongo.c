@@ -300,7 +300,10 @@ int main(void) {
   }
 
   printf("Listening on https://0.0.0.0:%d\n", port);
-  printf("MongoDB: %s  DB=%s  Collection=%s\n", mongo_uri, dbname, colname);
+  printf("Database backend: MongoDB\n");
+  printf("MongoDB URI: %s\n", mongo_uri);
+  printf("Database name: %s\n", dbname);
+  printf("Collection: %s\n", colname);
   printf("POST JSON to /move\n");
   fflush(stdout);
 

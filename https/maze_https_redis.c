@@ -148,6 +148,14 @@ int main(void) {
 
   RedisCtx rctx = { redis };
 
+  printf("=====================================\n");
+  printf("Database backend: Redis\n");
+  printf("Redis host: localhost\n");
+  printf("Redis port: 6379\n");
+  printf("Key namespace example: team2ttmission:TEST_MISSION\n");
+  printf("=====================================\n");
+
+
   struct MHD_Daemon* d = MHD_start_daemon(
     MHD_USE_INTERNAL_POLLING_THREAD | MHD_USE_TLS,
     8444,

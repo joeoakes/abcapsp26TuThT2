@@ -88,32 +88,60 @@ static enum MHD_Result handler(
   if (strcmp(method, "POST") != 0)
     return respond_text(c, MHD_HTTP_METHOD_NOT_ALLOWED, "Use POST\n");
 
-  /* Example endpoint: POST /mission_end */
-  if (strcmp(url, "/mission_end") == 0) {
+if (strcmp(url, "/mission_end") == 0) {
 
     time_t now = time(NULL);
 
+    /* ================= NEW CODE (1): generate unique mission ID ================= */
+
+    redisReply* id_reply = redisCommand(
+      rctx->redis,
+      "INCR team2ttmission:next_id"
+    );
+
+    if (!id_reply || id_reply->type != REDIS_REPLY_INTEGER) {
+      if (id_reply) freeReplyObject(id_reply);
+      return respond_text(c, 500, "Failed to generate mission ID\n");
+    }
+
+    long long mission_id = id_reply->integer;
+    freeReplyObject(id_reply);
+
+    /* ================= NEW CODE (2): build Redis key ================= */
+
+    char mission_key[128];
+    snprintf(
+      mission_key,
+      sizeof(mission_key),
+      "team2ttmission:%lld",
+      mission_id
+    );
+
+    /* ================= EXISTING CODE (slightly adjusted key) ================= */
+
     redisCommand(
       rctx->redis,
-      "HSET team2ttmission:TEST_MISSION "
-      "mission_id %s "
+      "HSET %s "
+      "mission_id %lld "
       "robot_id %s "
       "mission_result %s "
       "abort_reason %s "
       "end_time %ld",
-      "TEST_MISSION",
+      mission_key,        // ← THIS is the only changed argument
+      mission_id,
       "TEST_ROBOT",
       "success",
       "user exited",
       (long)now
     );
 
+    /* ================= OPTIONAL: print ID ================= */
+
+    printf("%s\n", mission_key);
+
     return respond_text(c, MHD_HTTP_OK, "Mission recorded\n");
-  }
-
-  return respond_text(c, MHD_HTTP_NOT_FOUND, "Not found\n");
 }
-
+}
 /* ================= main ================= */
 
 int main(void) {

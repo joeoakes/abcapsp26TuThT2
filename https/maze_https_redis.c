@@ -92,6 +92,13 @@ if (strcmp(url, "/mission_end") == 0) {
 
     time_t now = time(NULL);
 
+  struct tm* tm_info = localtime(&now);
+
+  char time_buf[64];
+  strftime(time_buf, sizeof(time_buf),
+         "%Y-%m-%d %H:%M:%S", tm_info);
+
+
     /* ================= NEW CODE (1): generate unique mission ID ================= */
 
     redisReply* id_reply = redisCommand(
@@ -126,14 +133,15 @@ if (strcmp(url, "/mission_end") == 0) {
       "robot_id %s "
       "mission_result %s "
       "abort_reason %s "
-      "end_time %ld",
-      mission_key,        // ← THIS is the only changed argument
+      "end_time %s",
+      mission_key,
       mission_id,
       "TEST_ROBOT",
       "success",
       "user exited",
-      (long)now
-    );
+      time_buf
+);
+
 
     /* ================= OPTIONAL: print ID ================= */
 

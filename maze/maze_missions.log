@@ -1,0 +1,47 @@
+{
+  "mission_id": "MISSION-001",
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "mission_start",
+  "map": {
+    "name": "maze_level_1",
+    "width": 15,
+    "height": 15
+  },
+  "player_start": {
+    "x": 0,
+    "y": 0
+  },
+  "start_time": "2026-02-15T23:18:33Z"
+}
+
+{
+  "mission_id": "MISSION-001",
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "mission_checkpoint",
+  "moves_completed": 25,
+  "current_position": {
+    "x": 3,
+    "y": 4
+  },
+  "goal_reached": false,
+  "timestamp": "2026-02-15T23:18:46Z"
+}
+
+{
+  "mission_id": "MISSION-001",
+  "session_id": "7bd40199-913e-43b9-9e92-77c9e0bb7548",
+  "event_type": "mission_end",
+  "result": "success",
+  "goal_reached": true,
+  "goal_position": {
+    "x": 2,
+    "y": 14
+  },
+  "final_position": {
+    "x": 2,
+    "y": 14
+  },
+  "total_moves": 46,
+  "duration_seconds": 77,
+  "end_time": "2026-02-15T23:19:50Z"
+}

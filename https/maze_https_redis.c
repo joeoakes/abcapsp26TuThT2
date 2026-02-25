@@ -1,223 +1,177 @@
 // maze_https_redis.c
-// HTTPS server that writes mission data to Redis.
-// NO JSON parsing. NO telemetry ingestion.
+// HTTPS server that pushes mission JSON into Redis
 
+#include <errno.h>
 #include <microhttpd.h>
 #include <hiredis/hiredis.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-#include <signal.h>
 #include <time.h>
-#include <unistd.h>
 
-#ifndef MHD_HTTP_OK
-#define MHD_HTTP_OK 200
-#endif
+#define DEFAULT_PORT 8444
+#define POSTBUFFERSIZE 4096
 
-static volatile sig_atomic_t g_stop = 0;
+static const char *cert_file = "certs/server.crt";
+static const char *key_file  = "certs/server.key";
 
-static void on_sigint(int signo) {
-  (void)signo;
-  g_stop = 1;
-}
+static redisContext *redis;
 
-/* ================= Helpers ================= */
+/* ================= Connection Structure ================= */
 
-static char* read_file(const char* path) {
-  FILE* f = fopen(path, "rb");
-  if (!f) return NULL;
+struct connection_info {
+    char *data;
+    size_t size;
+};
 
-  if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
-  long n = ftell(f);
-  if (n < 0) { fclose(f); return NULL; }
-  rewind(f);
+/* ================= File Reader ================= */
 
-  char* buf = (char*)malloc((size_t)n + 1);
-  if (!buf) { fclose(f); return NULL; }
+static char *read_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
 
-  size_t got = fread(buf, 1, (size_t)n, f);
-  fclose(f);
-  if (got != (size_t)n) { free(buf); return NULL; }
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
 
-  buf[n] = '\0';
-  return buf;
-}
+    char *buf = malloc(n + 1);
+    if (!buf) { fclose(f); return NULL; }
 
-/* ================= Responses ================= */
-
-static enum MHD_Result respond_text(
-  struct MHD_Connection* c,
-  unsigned int code,
-  const char* text
-) {
-  struct MHD_Response* r =
-    MHD_create_response_from_buffer(strlen(text), (void*)text, MHD_RESPMEM_MUST_COPY);
-  enum MHD_Result ret = MHD_queue_response(c, code, r);
-  MHD_destroy_response(r);
-  return ret;
-}
-
-/* ================= Redis context ================= */
-
-typedef struct {
-  redisContext* redis;
-} RedisCtx;
-
-/* ================= Request handler ================= */
-
-static enum MHD_Result handler(
-  void* cls,
-  struct MHD_Connection* c,
-  const char* url,
-  const char* method,
-  const char* version,
-  const char* upload_data,
-  size_t* upload_data_size,
-  void** con_cls
-) {
-  (void)version;
-  (void)upload_data;
-  (void)upload_data_size;
-  (void)con_cls;
-
-  RedisCtx* rctx = (RedisCtx*)cls;
-
-  if (strcmp(method, "POST") != 0)
-    return respond_text(c, MHD_HTTP_METHOD_NOT_ALLOWED, "Use POST\n");
-
-if (strcmp(url, "/mission_end") == 0) {
-
-    time_t now = time(NULL);
-
-  struct tm* tm_info = localtime(&now);
-
-  char time_buf[64];
-  strftime(time_buf, sizeof(time_buf),
-         "%Y-%m-%d %H:%M:%S", tm_info);
-
-
-    /* ================= NEW CODE (1): generate unique mission ID ================= */
-
-    redisReply* id_reply = redisCommand(
-      rctx->redis,
-      "INCR team2ttmission:next_id"
-    );
-
-    if (!id_reply || id_reply->type != REDIS_REPLY_INTEGER) {
-      if (id_reply) freeReplyObject(id_reply);
-      return respond_text(c, 500, "Failed to generate mission ID\n");
+    if (fread(buf, 1, n, f) != (size_t)n) {
+        fclose(f);
+        free(buf);
+        return NULL;
     }
 
-    long long mission_id = id_reply->integer;
-    freeReplyObject(id_reply);
+    buf[n] = '\0';
+    fclose(f);
+    return buf;
+}
 
-    /* ================= NEW CODE (2): build Redis key ================= */
+/* ================= Request Handler ================= */
 
-    char mission_key[128];
-    snprintf(
-      mission_key,
-      sizeof(mission_key),
-      "team2ttmission:%lld",
-      mission_id
+static enum MHD_Result handle_post(
+    void *cls,
+    struct MHD_Connection *connection,
+    const char *url,
+    const char *method,
+    const char *version,
+    const char *upload_data,
+    size_t *upload_data_size,
+    void **con_cls)
+{
+    (void)version;
+    (void)cls;
+
+    if (strcmp(method, "POST") != 0 || strcmp(url, "/mission") != 0)
+        return MHD_NO;
+
+    /* First call: allocate connection struct */
+    if (*con_cls == NULL) {
+        struct connection_info *ci = calloc(1, sizeof(*ci));
+        *con_cls = ci;
+        return MHD_YES;
+    }
+
+    struct connection_info *ci = *con_cls;
+
+    /* Collect POST body */
+    if (*upload_data_size != 0) {
+        ci->data = realloc(ci->data, ci->size + *upload_data_size + 1);
+        memcpy(ci->data + ci->size, upload_data, *upload_data_size);
+        ci->size += *upload_data_size;
+        ci->data[ci->size] = '\0';
+
+        *upload_data_size = 0;
+        return MHD_YES;
+    }
+
+    /* ================= Redis Insert ================= */
+
+    redisReply *reply = redisCommand(
+        redis,
+        "RPUSH team2tt_mission %s",
+        ci->data
     );
 
-    /* ================= EXISTING CODE (slightly adjusted key) ================= */
+    if (!reply) {
+        fprintf(stderr, "Redis insert failed\n");
+    } else {
+        printf("Redis insert success\n");
+        freeReplyObject(reply);
+    }
 
-    redisCommand(
-      rctx->redis,
-      "HSET %s "
-      "mission_id %lld "
-      "robot_id %s "
-      "mission_result %s "
-      "abort_reason %s "
-      "end_time %s",
-      mission_key,
-      mission_id,
-      "TEST_ROBOT",
-      "success",
-      "user exited",
-      time_buf
-);
+    /* ================= HTTP Response ================= */
 
+    const char *response = "Mission recorded";
+    struct MHD_Response *resp =
+        MHD_create_response_from_buffer(
+            strlen(response),
+            (void *)response,
+            MHD_RESPMEM_PERSISTENT
+        );
 
-    /* ================= OPTIONAL: print ID ================= */
+    int ret = MHD_queue_response(connection, MHD_HTTP_OK, resp);
+    MHD_destroy_response(resp);
 
-    printf("%s\n", mission_key);
+    free(ci->data);
+    free(ci);
+    *con_cls = NULL;
 
-    return respond_text(c, MHD_HTTP_OK, "Mission recorded\n");
+    return ret;
 }
-}
-/* ================= main ================= */
+
+/* ================= Main ================= */
 
 int main(void) {
-  signal(SIGINT, on_sigint);
-  signal(SIGTERM, on_sigint);
 
-  /* Load TLS cert + key (same pattern as Mongo server) */
-  const char* crt_path = getenv("TLS_CERT");
-  const char* key_path = getenv("TLS_KEY");
+    /* Connect to Redis */
+    redis = redisConnect("localhost", 6379);
+    if (redis == NULL || redis->err) {
+        fprintf(stderr, "Failed to connect to Redis\n");
+        return 1;
+    }
 
-  if (!crt_path) crt_path = "certs/server.crt";
-  if (!key_path) key_path = "certs/server.key";
+    /* Load TLS certificate and key */
+    char *cert_pem = read_file(cert_file);
+    char *key_pem  = read_file(key_file);
 
-  char* server_crt_pem = read_file(crt_path);
-  char* server_key_pem = read_file(key_path);
+    if (!cert_pem || !key_pem) {
+        fprintf(stderr, "Failed to read cert/key files\n");
+        return 1;
+    }
 
-  if (!server_crt_pem || !server_key_pem) {
-    fprintf(stderr, "Failed to read TLS files: %s %s\n", crt_path, key_path);
-    free(server_crt_pem);
-    free(server_key_pem);
-    return 1;
-  }
+    struct MHD_Daemon *daemon = MHD_start_daemon(
+        MHD_USE_THREAD_PER_CONNECTION | MHD_USE_TLS,
+        DEFAULT_PORT,
+        NULL, NULL,
+        &handle_post, NULL,
+        MHD_OPTION_HTTPS_MEM_CERT, cert_pem,
+        MHD_OPTION_HTTPS_MEM_KEY,  key_pem,
+        MHD_OPTION_END
+    );
 
-  /* Redis connection */
-  redisContext* redis = redisConnect("localhost", 6379);
-  if (!redis || redis->err) {
-    fprintf(stderr, "Redis connection failed\n");
-    free(server_crt_pem);
-    free(server_key_pem);
-    return 1;
-  }
+    if (!daemon) {
+        fprintf(stderr, "Failed to start HTTPS server\n");
+        return 1;
+    }
 
-  RedisCtx rctx = { redis };
+    printf("========================================\n");
+    printf("Database backend: Redis\n");
+    printf("Redis host: localhost\n");
+    printf("Redis port: 6379\n");
+    printf("Key namespace example: team2tt_mission\n");
+    printf("========================================\n\n");
 
-  printf("=====================================\n");
-  printf("Database backend: Redis\n");
-  printf("Redis host: localhost\n");
-  printf("Redis port: 6379\n");
-  printf("Key namespace example: team2ttmission:TEST_MISSION\n");
-  printf("=====================================\n");
+    printf("HTTPS Redis mission server running on port %d\n",
+           DEFAULT_PORT);
 
+    getchar(); 
 
-  struct MHD_Daemon* d = MHD_start_daemon(
-    MHD_USE_INTERNAL_POLLING_THREAD | MHD_USE_TLS,
-    8444,
-    NULL, NULL,
-    &handler, &rctx,
-    MHD_OPTION_HTTPS_MEM_KEY,  server_key_pem,
-    MHD_OPTION_HTTPS_MEM_CERT, server_crt_pem,
-    MHD_OPTION_END
-  );
-
-  if (!d) {
-    fprintf(stderr, "Failed to start HTTPS server\n");
+    MHD_stop_daemon(daemon);
+    free(cert_pem);
+    free(key_pem);
     redisFree(redis);
-    free(server_crt_pem);
-    free(server_key_pem);
-    return 1;
-  }
 
-  printf("HTTPS Redis mission server running on port 8444\n");
-
-  while (!g_stop)
-    sleep(1);
-
-  MHD_stop_daemon(d);
-  redisFree(redis);
-  free(server_crt_pem);
-  free(server_key_pem);
-  return 0;
+    return 0;
 }

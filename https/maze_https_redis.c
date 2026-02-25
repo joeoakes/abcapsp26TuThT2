@@ -63,7 +63,7 @@ static enum MHD_Result handle_post(
     (void)version;
     (void)cls;
 
-    if (strcmp(method, "POST") != 0 || strcmp(url, "/mission") != 0)
+    if (strcmp(method, "POST") != 0 || strcmp(url, "/mission_end") != 0)
         return MHD_NO;
 
     /* First call: allocate connection struct */

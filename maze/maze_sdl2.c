@@ -17,7 +17,7 @@
 #define CELL   32
 #define PAD    16
 
-#define TELEMETRY_URL "https://10.170.8.101:8444/move"
+#define TELEMETRY_URL "https://10.170.8.130:8444/move"
 #define AI_MISSION_URL "https://10.170.8.109:8444/mission_end"
 #define DEVICE_ID "mini-pupper-01"
 

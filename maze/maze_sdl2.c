@@ -21,6 +21,14 @@
 #define AI_MISSION_URL "https://10.170.8.109:8444/mission_end"
 #define DEVICE_ID "mini-pupper-01"
 
+/* for converting time to a more user-friendly format */
+static void format_time(time_t t, char *buf, size_t size) {
+    struct tm tm_info;
+    localtime_r(&t, &tm_info);
+    strftime(buf, size, "%Y-%m-%d %H:%M:%S", &tm_info);
+}
+
+
 /* ================= Mission Stats ================= */
 
 static time_t mission_start_time = 0;
@@ -231,14 +239,20 @@ static void ai_mission_send(const char* result,const char* abort_reason){
   time_t end_time=time(NULL);
   int duration=(int)difftime(end_time,mission_start_time);
 
+  char start_str[64];
+  char end_str[64];
+  
+  format_time(mission_start_time, start_str, sizeof(start_str));
+  format_time(end_time, end_str, sizeof(end_str));
+
   char json[1024];
 
   snprintf(json,sizeof(json),
     "{"
     "\"team\":\"team2tt\","
     "\"device_id\":\"%s\","
-    "\"start_time\":%ld,"
-    "\"end_time\":%ld,"
+    "\"start_time\":\"%s\","
+    "\"end_time\":\"%s\","
     "\"moves_left_turn\":%d,"
     "\"moves_right_turn\":%d,"
     "\"moves_straight\":%d,"
@@ -250,7 +264,7 @@ static void ai_mission_send(const char* result,const char* abort_reason){
     "\"abort_reason\":\"%s\""
     "}",
     DEVICE_ID,
-    mission_start_time,end_time,
+    start_str,end_str,
     moves_left,moves_right,moves_straight,moves_reverse,
     moves_total,distance_traveled,duration,
     result,abort_reason);

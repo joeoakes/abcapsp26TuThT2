@@ -97,7 +97,12 @@ static enum MHD_Result handle_post(
     if (!reply) {
         fprintf(stderr, "Redis insert failed\n");
     } else {
-        printf("Redis insert success\n");
+        if (reply->type == REDIS_REPLY_INTEGER) {
+            long mission_id = reply->integer;
+            printf("Mission recorded. Mission ID: %ld\n", mission_id);
+        } else {
+            printf("Redis insert success (unexpected reply type)\n");
+        }
         freeReplyObject(reply);
     }
 

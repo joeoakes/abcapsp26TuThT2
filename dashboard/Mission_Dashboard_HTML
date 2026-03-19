@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TEAM2TT — Autonomous Mission Control System</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cyan: #00f5ff;
+    --cyan-dim: #00b8c4;
+    --cyan-glow: rgba(0,245,255,0.15);
+    --green: #39ff14;
+    --red: #ff2d55;
+    --amber: #ffbe00;
+    --bg: #030a0f;
+    --bg2: #071420;
+    --bg3: #0a1e30;
+    --panel: rgba(7,20,32,0.95);
+    --border: rgba(0,245,255,0.2);
+    --text: #c8e8f0;
+    --text-dim: #5a8a9a;
+    --mono: 'Share Tech Mono', monospace;
+    --display: 'Orbitron', sans-serif;
+    --body: 'Exo 2', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image:
+      repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,245,255,0.015) 2px, rgba(0,245,255,0.015) 4px),
+      radial-gradient(ellipse at 20% 50%, rgba(0,80,120,0.15) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba(0,60,100,0.1) 0%, transparent 50%);
+  }
+
+  /* SCANLINE overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  /* ─── HEADER ─── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(0,245,255,0.05) 0%, transparent 100%);
+    position: relative;
+  }
+  header::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  }
+
+  .logo-block { display: flex; align-items: center; gap: 16px; }
+  .logo-icon {
+    width: 48px; height: 48px;
+    border: 2px solid var(--cyan);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background: rgba(0,245,255,0.08);
+    animation: hexPulse 3s ease-in-out infinite;
+  }
+  @keyframes hexPulse {
+    0%,100% { box-shadow: 0 0 8px var(--cyan-glow); }
+    50% { box-shadow: 0 0 24px rgba(0,245,255,0.4); }
+  }
+  .logo-icon svg { width: 24px; height: 24px; color: var(--cyan); }
+
+  .logo-text { display: flex; flex-direction: column; }
+  .logo-name {
+    font-family: var(--display);
+    font-size: 22px; font-weight: 900;
+    letter-spacing: 4px; color: var(--cyan);
+    text-shadow: 0 0 20px rgba(0,245,255,0.6);
+  }
+  .logo-sub {
+    font-family: var(--mono);
+    font-size: 9px; letter-spacing: 3px;
+    color: var(--text-dim); text-transform: uppercase;
+  }
+
+  .header-center {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .sys-title {
+    font-family: var(--display);
+    font-size: 11px; letter-spacing: 6px;
+    color: var(--text-dim); text-transform: uppercase;
+  }
+  .live-ticker {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--cyan-dim);
+  }
+
+  /* MISSION STATUS badge */
+  .mission-status-block { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .status-label { font-family: var(--mono); font-size: 9px; letter-spacing: 3px; color: var(--text-dim); }
+  .status-badge {
+    font-family: var(--display);
+    font-size: 18px; font-weight: 700;
+    letter-spacing: 4px;
+    padding: 8px 20px;
+    border: 2px solid;
+    position: relative; overflow: hidden;
+    transition: all 0.5s ease;
+  }
+  .status-badge.standby { border-color: var(--amber); color: var(--amber); text-shadow: 0 0 12px rgba(255,190,0,0.5); }
+  .status-badge.success { border-color: var(--green); color: var(--green); text-shadow: 0 0 12px rgba(57,255,20,0.6); animation: successPulse 2s ease-in-out infinite; }
+  .status-badge.failure { border-color: var(--red); color: var(--red); text-shadow: 0 0 12px rgba(255,45,85,0.6); animation: failPulse 1s ease-in-out infinite; }
+  @keyframes successPulse { 0%,100% { box-shadow: 0 0 10px rgba(57,255,20,0.3); } 50% { box-shadow: 0 0 30px rgba(57,255,20,0.7); } }
+  @keyframes failPulse { 0%,100% { box-shadow: 0 0 10px rgba(255,45,85,0.3); } 50% { box-shadow: 0 0 30px rgba(255,45,85,0.7); } }
+  .status-badge::before {
+    content: '';
+    position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+    animation: shimmer 3s ease-in-out infinite;
+  }
+  @keyframes shimmer { 0% { left: -100%; } 100% { left: 200%; } }
+
+  /* ─── MAIN GRID ─── */
+  .dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 16px; padding: 24px 32px;
+    max-width: 1600px; margin: 0 auto;
+  }
+
+  /* ─── PANEL BASE ─── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+  .panel:hover { border-color: rgba(0,245,255,0.4); }
+  .panel::before {
+    content: '';
+    position: absolute; top: 0; left: 0;
+    width: 40px; height: 2px;
+    background: var(--cyan);
+  }
+  .panel::after {
+    content: '';
+    position: absolute; top: 0; left: 0;
+    width: 2px; height: 40px;
+    background: var(--cyan);
+  }
+
+  .panel-title {
+    font-family: var(--display);
+    font-size: 9px; font-weight: 700;
+    letter-spacing: 4px; color: var(--cyan-dim);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel-title::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--cyan);
+    display: inline-block;
+    animation: blink 2s step-end infinite;
+  }
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+
+  /* ─── KEY METRICS ─── */
+  .metrics-panel { grid-column: span 3; }
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .metric-card {
+    background: rgba(0,245,255,0.03);
+    border: 1px solid rgba(0,245,255,0.12);
+    padding: 16px 20px;
+    position: relative;
+    transition: all 0.3s;
+  }
+  .metric-card:hover {
+    background: rgba(0,245,255,0.06);
+    border-color: rgba(0,245,255,0.3);
+    transform: translateY(-2px);
+  }
+  .metric-label {
+    font-family: var(--mono); font-size: 9px;
+    letter-spacing: 3px; color: var(--text-dim);
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .metric-value {
+    font-family: var(--display);
+    font-size: 32px; font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 20px rgba(0,245,255,0.4);
+    line-height: 1;
+  }
+  .metric-unit {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--text-dim); margin-top: 4px;
+  }
+  .metric-bar {
+    margin-top: 10px;
+    height: 2px; background: rgba(0,245,255,0.1);
+    position: relative; overflow: hidden;
+  }
+  .metric-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan-dim), var(--cyan));
+    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+
+  /* ─── MOVEMENT BREAKDOWN ─── */
+  .movement-panel { grid-column: span 2; }
+  .move-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .move-card {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(0,245,255,0.08);
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    transition: all 0.3s;
+  }
+  .move-card:hover { border-color: rgba(0,245,255,0.25); }
+  .move-dir {
+    font-family: var(--display); font-size: 10px;
+    letter-spacing: 3px; color: var(--text-dim);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .move-dir .arrow { font-size: 14px; }
+  .move-count {
+    font-family: var(--display); font-size: 26px; font-weight: 700;
+    color: var(--cyan);
+  }
+  .move-pct { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+  .move-track {
+    height: 3px; background: rgba(0,245,255,0.08);
+    border-radius: 2px; overflow: hidden;
+  }
+  .move-track-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .fwd .move-track-fill { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+  .rev .move-track-fill { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .lft .move-track-fill { background: #a855f7; box-shadow: 0 0 6px #a855f7; }
+  .rgt .move-track-fill { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  /* ─── TIMELINE ─── */
+  .timeline-panel { grid-column: 1; }
+  .timeline-items { display: flex; flex-direction: column; gap: 14px; }
+  .tl-row {
+    display: flex; flex-direction: column; gap: 3px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(0,245,255,0.06);
+  }
+  .tl-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .tl-label { font-family: var(--mono); font-size: 9px; letter-spacing: 2px; color: var(--text-dim); }
+  .tl-value {
+    font-family: var(--display); font-size: 14px; font-weight: 700;
+    color: var(--cyan); letter-spacing: 2px;
+  }
+  .tl-elapsed {
+    font-family: var(--display); font-size: 28px; font-weight: 900;
+    color: var(--green); text-shadow: 0 0 15px rgba(57,255,20,0.4);
+    letter-spacing: 4px;
+  }
+
+  /* ─── DEVICE INFO ─── */
+  .device-panel { grid-column: 2; }
+  .device-list { display: flex; flex-direction: column; gap: 10px; }
+  .device-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0,245,255,0.06);
+  }
+  .device-row:last-child { border-bottom: none; }
+  .device-key { font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 1px; }
+  .device-val { font-family: var(--mono); font-size: 11px; color: var(--text); text-align: right; max-width: 55%; }
+  .device-val.online { color: var(--green); }
+  .device-val.warn { color: var(--amber); }
+
+  /* DB STATUS cluster */
+  .db-panel { grid-column: 3; }
+  .db-list { display: flex; flex-direction: column; gap: 10px; }
+  .db-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(0,245,255,0.08);
+  }
+  .db-info { display: flex; flex-direction: column; gap: 2px; }
+  .db-name { font-family: var(--display); font-size: 11px; letter-spacing: 2px; color: var(--text); }
+  .db-type { font-family: var(--mono); font-size: 9px; color: var(--text-dim); letter-spacing: 1px; }
+  .db-indicator {
+    width: 10px; height: 10px; border-radius: 50%;
+    position: relative;
+  }
+  .db-indicator.connected { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pingAnim 2s ease-in-out infinite; }
+  .db-indicator.disconnected { background: var(--red); }
+  .db-indicator.pending { background: var(--amber); animation: pendingAnim 1s step-end infinite; }
+  @keyframes pingAnim { 0%,100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+  @keyframes pendingAnim { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+  .db-latency { font-family: var(--mono); font-size: 9px; color: var(--text-dim); text-align: right; }
+
+  /* ─── JSON INPUT SECTION ─── */
+  .input-section {
+    grid-column: span 3;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0;
+  }
+  .input-panel {
+    border-right: none;
+  }
+  .json-area-wrap { position: relative; }
+  .json-area-label {
+    font-family: var(--mono); font-size: 9px;
+    letter-spacing: 3px; color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .json-textarea {
+    width: 100%; height: 160px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(0,245,255,0.15);
+    color: var(--cyan);
+    font-family: var(--mono); font-size: 12px;
+    padding: 14px;
+    resize: vertical;
+    outline: none;
+    line-height: 1.6;
+    transition: border-color 0.3s;
+  }
+  .json-textarea:focus { border-color: var(--cyan); box-shadow: 0 0 12px rgba(0,245,255,0.1); }
+  .json-textarea::placeholder { color: rgba(0,245,255,0.2); }
+
+  .execute-panel {
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: none;
+    min-width: 180px;
+    position: relative;
+  }
+  .execute-panel::before { display: none; }
+  .execute-panel::after { display: none; }
+  .execute-panel .corner-tl {
+    position: absolute; top: 0; right: 0;
+    width: 40px; height: 2px; background: var(--cyan);
+  }
+  .execute-panel .corner-tr {
+    position: absolute; top: 0; right: 0;
+    width: 2px; height: 40px; background: var(--cyan);
+  }
+
+  .exec-title {
+    font-family: var(--display); font-size: 9px;
+    letter-spacing: 4px; color: var(--text-dim); text-transform: uppercase;
+  }
+  .exec-status {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+  .exec-status span { display: block; }
+
+  .exec-btn {
+    background: transparent;
+    border: 2px solid var(--cyan);
+    color: var(--cyan);
+    font-family: var(--display);
+    font-size: 13px; font-weight: 700;
+    letter-spacing: 4px;
+    padding: 16px 12px;
+    cursor: pointer;
+    text-transform: uppercase;
+    position: relative; overflow: hidden;
+    transition: all 0.3s;
+    width: 100%;
+  }
+  .exec-btn:hover {
+    background: rgba(0,245,255,0.1);
+    box-shadow: 0 0 30px rgba(0,245,255,0.25), inset 0 0 20px rgba(0,245,255,0.05);
+    transform: translateY(-1px);
+  }
+  .exec-btn:active { transform: translateY(1px); }
+  .exec-btn::after {
+    content: '';
+    position: absolute; top: 50%; left: 50%;
+    width: 0; height: 0;
+    background: rgba(0,245,255,0.2);
+    border-radius: 50%;
+    transform: translate(-50%,-50%);
+    transition: width 0.4s, height 0.4s, opacity 0.4s;
+    opacity: 0;
+  }
+  .exec-btn:active::after { width: 200px; height: 200px; opacity: 0; }
+
+  /* Toast notification */
+  .toast {
+    position: fixed; bottom: 32px; right: 32px;
+    background: rgba(7,20,32,0.98);
+    border: 1px solid var(--cyan);
+    padding: 14px 20px;
+    font-family: var(--mono); font-size: 12px;
+    color: var(--cyan);
+    transform: translateX(120%);
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1000;
+  }
+  .toast.show { transform: translateX(0); }
+  .toast.error { border-color: var(--red); color: var(--red); }
+
+  /* ─── FOOTER ─── */
+  footer {
+    padding: 12px 32px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .footer-text { font-family: var(--mono); font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 1100px) {
+    .dashboard { grid-template-columns: 1fr 1fr; }
+    .metrics-panel { grid-column: span 2; }
+    .movement-panel { grid-column: span 2; }
+    .timeline-panel, .device-panel, .db-panel { grid-column: span 1; }
+    .db-panel { grid-column: span 2; }
+    .input-section { grid-column: span 2; }
+  }
+  @media (max-width: 700px) {
+    .dashboard { grid-template-columns: 1fr; }
+    .metrics-panel, .movement-panel, .timeline-panel, .device-panel, .db-panel { grid-column: span 1; }
+    .input-section { grid-template-columns: 1fr; grid-column: span 1; }
+    .execute-panel { border-left: 1px solid var(--border); border-top: none; }
+    .metrics-grid { grid-template-columns: 1fr; }
+    .move-grid { grid-template-columns: 1fr 1fr; }
+    header { flex-direction: column; gap: 12px; align-items: flex-start; }
+  }
+
+  /* LOAD ANIMATION */
+  .panel { animation: panelIn 0.5s ease both; }
+  .panel:nth-child(1) { animation-delay: 0.05s; }
+  .panel:nth-child(2) { animation-delay: 0.1s; }
+  .panel:nth-child(3) { animation-delay: 0.15s; }
+  .panel:nth-child(4) { animation-delay: 0.2s; }
+  .panel:nth-child(5) { animation-delay: 0.25s; }
+  .panel:nth-child(6) { animation-delay: 0.3s; }
+  .input-section { animation: panelIn 0.5s 0.35s ease both; }
+  @keyframes panelIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo-block">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    </div>
+    <div class="logo-text">
+      <div class="logo-name">TEAM2TT</div>
+      <div class="logo-sub">Autonomous Mission Control System</div>
+    </div>
+  </div>
+
+  <div class="header-center">
+    <div class="sys-title">Mission Operations Center</div>
+    <div class="live-ticker" id="clockTicker">──── AWAITING MISSION DATA ────</div>
+  </div>
+
+  <div class="mission-status-block">
+    <div class="status-label">MISSION STATUS</div>
+    <div class="status-badge standby" id="statusBadge">STANDBY</div>
+  </div>
+</header>
+
+<!-- DASHBOARD GRID -->
+<div class="dashboard">
+
+  <!-- KEY METRICS (full width) -->
+  <div class="panel metrics-panel">
+    <div class="panel-title">Key Mission Metrics</div>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Total Distance</div>
+        <div class="metric-value" id="metricDistance">—</div>
+        <div class="metric-unit">CENTIMETERS</div>
+        <div class="metric-bar"><div class="metric-bar-fill" id="barDistance" style="width:0%"></div></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Mission Duration</div>
+        <div class="metric-value" id="metricDuration">—</div>
+        <div class="metric-unit">SECONDS</div>
+        <div class="metric-bar"><div class="metric-bar-fill" id="barDuration" style="width:0%"></div></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Total Moves</div>
+        <div class="metric-value" id="metricMoves">—</div>
+        <div class="metric-unit">COMMANDS EXECUTED</div>
+        <div class="metric-bar"><div class="metric-bar-fill" id="barMoves" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MOVEMENT BREAKDOWN -->
+  <div class="panel movement-panel">
+    <div class="panel-title">Movement Breakdown</div>
+    <div class="move-grid">
+      <div class="move-card fwd">
+        <div class="move-dir"><span class="arrow">↑</span> FORWARD</div>
+        <div class="move-count" id="moveFwd">—</div>
+        <div class="move-pct" id="moveFwdPct">— %</div>
+        <div class="move-track"><div class="move-track-fill" id="trackFwd" style="width:0%"></div></div>
+      </div>
+      <div class="move-card rev">
+        <div class="move-dir"><span class="arrow">↓</span> REVERSE</div>
+        <div class="move-count" id="moveRev">—</div>
+        <div class="move-pct" id="moveRevPct">— %</div>
+        <div class="move-track"><div class="move-track-fill" id="trackRev" style="width:0%"></div></div>
+      </div>
+      <div class="move-card lft">
+        <div class="move-dir"><span class="arrow">←</span> LEFT</div>
+        <div class="move-count" id="moveLft">—</div>
+        <div class="move-pct" id="moveLftPct">— %</div>
+        <div class="move-track"><div class="move-track-fill" id="trackLft" style="width:0%"></div></div>
+      </div>
+      <div class="move-card rgt">
+        <div class="move-dir"><span class="arrow">→</span> RIGHT</div>
+        <div class="move-count" id="moveRgt">—</div>
+        <div class="move-pct" id="moveRgtPct">— %</div>
+        <div class="move-track"><div class="move-track-fill" id="trackRgt" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="panel timeline-panel">
+    <div class="panel-title">Mission Timeline</div>
+    <div class="timeline-items">
+      <div class="tl-row">
+        <div class="tl-label">START TIME</div>
+        <div class="tl-value" id="tlStart">AWAITING DATA</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-label">END TIME</div>
+        <div class="tl-value" id="tlEnd">AWAITING DATA</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-label">ELAPSED TIME</div>
+        <div class="tl-elapsed" id="tlElapsed">00:00:00</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DEVICE INFO -->
+  <div class="panel device-panel">
+    <div class="panel-title">Device Information</div>
+    <div class="device-list" id="deviceList">
+      <div class="device-row">
+        <div class="device-key">DEVICE ID</div>
+        <div class="device-val" id="devId">—</div>
+      </div>
+      <div class="device-row">
+        <div class="device-key">FIRMWARE</div>
+        <div class="device-val" id="devFW">—</div>
+      </div>
+      <div class="device-row">
+        <div class="device-key">PLATFORM</div>
+        <div class="device-val" id="devPlatform">—</div>
+      </div>
+      <div class="device-row">
+        <div class="device-key">BATTERY</div>
+        <div class="device-val" id="devBattery">—</div>
+      </div>
+      <div class="device-row">
+        <div class="device-key">CONNECTIVITY</div>
+        <div class="device-val online" id="devConn">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DATABASE STATUS -->
+  <div class="panel db-panel">
+    <div class="panel-title">Data Source Status</div>
+    <div class="db-list">
+      <div class="db-row">
+        <div class="db-info">
+          <div class="db-name">REDIS</div>
+          <div class="db-type">IN-MEMORY CACHE · PORT 6379</div>
+          <div class="db-latency" id="redisLatency">— ms</div>
+        </div>
+        <div class="db-indicator" id="redisIndicator" style="background:var(--text-dim)"></div>
+      </div>
+      <div class="db-row">
+        <div class="db-info">
+          <div class="db-name">MONGODB</div>
+          <div class="db-type">DOCUMENT STORE · PORT 27017</div>
+          <div class="db-latency" id="mongoLatency">— ms</div>
+        </div>
+        <div class="db-indicator" id="mongoIndicator" style="background:var(--text-dim)"></div>
+      </div>
+      <div class="db-row">
+        <div class="db-info">
+          <div class="db-name">HTTPS API</div>
+          <div class="db-type">REST ENDPOINT · TLS 1.3</div>
+          <div class="db-latency" id="httpsLatency">— ms</div>
+        </div>
+        <div class="db-indicator" id="httpsIndicator" style="background:var(--text-dim)"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JSON INPUT + EXECUTE -->
+  <div class="input-section">
+    <div class="panel input-panel">
+      <div class="panel-title">Mission Data Input — JSON Payload</div>
+      <div class="json-area-label">LOAD OR PASTE MISSION JSON DATA BELOW</div>
+      <textarea class="json-textarea" id="jsonInput" spellcheck="false" placeholder='{
+  "mission_id": "MSN-001",
+  "status": "success",
+  "device": { "id": "BOT-42", "firmware": "v3.1.0", "platform": "Arduino Mega", "battery": "87%", "connectivity": "WIFI" },
+  "metrics": { "total_distance_cm": 540, "duration_seconds": 34, "total_moves": 22 },
+  "movement": { "forward": 9, "reverse": 4, "left": 5, "right": 4 },
+  "timeline": { "start": "2025-10-12T09:14:02Z", "end": "2025-10-12T09:14:36Z" }
+}'></textarea>
+    </div>
+    <div class="execute-panel">
+      <div class="corner-tl"></div>
+      <div class="corner-tr"></div>
+      <div class="exec-title">Execute Mission</div>
+      <div class="exec-status" id="execStatus">
+        <span id="srcRedis">REDIS ····· IDLE</span>
+        <span id="srcMongo">MONGO ····· IDLE</span>
+        <span id="srcHttps">HTTPS ····· IDLE</span>
+      </div>
+      <button class="exec-btn" onclick="executeMission()">▶ EXECUTE</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-text">TEAM2TT AMCS · CAPSTONE PROJECT · AUTONOMOUS MISSION CONTROL SYSTEM</div>
+  <div class="footer-text" id="footerTime">SYS TIME: —</div>
+</footer>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── CLOCK ───────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const ts = now.toISOString().replace('T',' ').substring(0,19) + ' UTC';
+  document.getElementById('footerTime').textContent = 'SYS TIME: ' + ts;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── TOAST ───────────────────────────────────────────────
+function showToast(msg, isError=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isError?' error':'');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ─── SIMULATE DB PING ────────────────────────────────────
+function simDbPing(indicatorId, latencyId, minMs, maxMs, failChance=0.05) {
+  const ind = document.getElementById(indicatorId);
+  const lat = document.getElementById(latencyId);
+  ind.className = 'db-indicator pending';
+  lat.textContent = '... ms';
+  setTimeout(() => {
+    const failed = Math.random() < failChance;
+    const ms = Math.floor(Math.random() * (maxMs - minMs) + minMs);
+    if (failed) {
+      ind.className = 'db-indicator disconnected';
+      lat.textContent = 'TIMEOUT';
+    } else {
+      ind.className = 'db-indicator connected';
+      lat.textContent = ms + ' ms';
+    }
+  }, Math.random() * 600 + 200);
+}
+
+// ─── ANIMATE NUMBER ──────────────────────────────────────
+function animateNumber(el, target, duration=800, decimals=0) {
+  const start = performance.now();
+  const from = 0;
+  function step(ts) {
+    const progress = Math.min((ts - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const val = from + (target - from) * ease;
+    el.textContent = decimals > 0 ? val.toFixed(decimals) : Math.floor(val);
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// ─── FORMAT ELAPSED TIME ─────────────────────────────────
+function formatElapsed(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return [h,m,s].map(v => String(v).padStart(2,'0')).join(':');
+}
+
+// ─── EXECUTE MISSION ─────────────────────────────────────
+function executeMission() {
+  const raw = document.getElementById('jsonInput').value.trim();
+  if (!raw) { showToast('⚠  NO JSON DATA PROVIDED', true); return; }
+
+  let data;
+  try { data = JSON.parse(raw); }
+  catch(e) { showToast('✖  INVALID JSON: ' + e.message, true); return; }
+
+  // Simulate DB pings
+  document.getElementById('srcRedis').textContent = 'REDIS ····· QUERYING';
+  document.getElementById('srcMongo').textContent = 'MONGO ····· QUERYING';
+  document.getElementById('srcHttps').textContent = 'HTTPS ····· QUERYING';
+
+  simDbPing('redisIndicator','redisLatency', 1, 12);
+  simDbPing('mongoIndicator','mongoLatency', 8, 45);
+  simDbPing('httpsIndicator','httpsLatency', 20, 120, 0.08);
+
+  setTimeout(() => {
+    document.getElementById('srcRedis').textContent = 'REDIS ····· OK';
+    document.getElementById('srcMongo').textContent = 'MONGO ····· OK';
+    document.getElementById('srcHttps').textContent = 'HTTPS ····· OK';
+  }, 1200);
+
+  // ── STATUS BADGE
+  const badge = document.getElementById('statusBadge');
+  const status = (data.status || 'standby').toLowerCase();
+  badge.className = 'status-badge';
+  if (status === 'success') { badge.classList.add('success'); badge.textContent = 'SUCCESS'; }
+  else if (status === 'failure' || status === 'failed') { badge.classList.add('failure'); badge.textContent = 'FAILURE'; }
+  else { badge.classList.add('standby'); badge.textContent = 'STANDBY'; }
+
+  // ── KEY METRICS
+  const m = data.metrics || {};
+  const dist = m.total_distance_cm || m.total_distance || m.distance || 0;
+  const dur  = m.duration_seconds  || m.duration || 0;
+  const moves = m.total_moves || m.moves || 0;
+
+  const dEl = document.getElementById('metricDistance');
+  const durEl = document.getElementById('metricDuration');
+  const mvEl = document.getElementById('metricMoves');
+  animateNumber(dEl, dist);
+  animateNumber(durEl, dur);
+  animateNumber(mvEl, moves);
+
+  setTimeout(() => {
+    document.getElementById('barDistance').style.width = Math.min(dist / 10, 100) + '%';
+    document.getElementById('barDuration').style.width  = Math.min(dur / 2, 100) + '%';
+    document.getElementById('barMoves').style.width    = Math.min(moves * 4, 100) + '%';
+  }, 50);
+
+  // ── MOVEMENT
+  const mv = data.movement || {};
+  const fwd = mv.forward || 0;
+  const rev = mv.reverse || mv.backward || 0;
+  const lft = mv.left || 0;
+  const rgt = mv.right || 0;
+  const total = fwd + rev + lft + rgt || 1;
+
+  const pct = v => ((v/total)*100).toFixed(1);
+  document.getElementById('moveFwd').textContent = fwd;
+  document.getElementById('moveRev').textContent = rev;
+  document.getElementById('moveLft').textContent = lft;
+  document.getElementById('moveRgt').textContent = rgt;
+  document.getElementById('moveFwdPct').textContent = pct(fwd) + ' % of total';
+  document.getElementById('moveRevPct').textContent = pct(rev) + ' % of total';
+  document.getElementById('moveLftPct').textContent = pct(lft) + ' % of total';
+  document.getElementById('moveRgtPct').textContent = pct(rgt) + ' % of total';
+  setTimeout(() => {
+    document.getElementById('trackFwd').style.width = pct(fwd) + '%';
+    document.getElementById('trackRev').style.width = pct(rev) + '%';
+    document.getElementById('trackLft').style.width = pct(lft) + '%';
+    document.getElementById('trackRgt').style.width = pct(rgt) + '%';
+  }, 50);
+
+  // ── TIMELINE
+  const tl = data.timeline || {};
+  const startRaw = tl.start || tl.start_time || null;
+  const endRaw   = tl.end   || tl.end_time   || null;
+
+  function fmtTime(iso) {
+    if (!iso) return 'NOT PROVIDED';
+    try {
+      return new Date(iso).toISOString().replace('T',' ').substring(0,19) + ' UTC';
+    } catch { return iso; }
+  }
+  document.getElementById('tlStart').textContent = fmtTime(startRaw);
+  document.getElementById('tlEnd').textContent   = fmtTime(endRaw);
+
+  const elSec = (startRaw && endRaw)
+    ? Math.round((new Date(endRaw) - new Date(startRaw)) / 1000)
+    : (dur || 0);
+  document.getElementById('tlElapsed').textContent = formatElapsed(elSec);
+
+  // ── DEVICE INFO
+  const dev = data.device || {};
+  document.getElementById('devId').textContent       = dev.id || dev.device_id || '—';
+  document.getElementById('devFW').textContent       = dev.firmware || dev.firmware_version || '—';
+  document.getElementById('devPlatform').textContent = dev.platform || dev.hardware || '—';
+  document.getElementById('devBattery').textContent  = dev.battery || dev.battery_level || '—';
+  const connEl = document.getElementById('devConn');
+  connEl.textContent = dev.connectivity || dev.connection || '—';
+  connEl.className = 'device-val online';
+
+  // ── TICKER
+  const mid = data.mission_id || data.id || 'UNKNOWN';
+  document.getElementById('clockTicker').textContent =
+    `─── MISSION ${mid} · LOADED · ${new Date().toISOString().substring(11,19)} UTC ───`;
+
+  showToast('✔  MISSION DATA LOADED SUCCESSFULLY');
+}
+</script>
+</body>
+</html>

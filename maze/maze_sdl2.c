@@ -19,6 +19,7 @@
 
 #define TELEMETRY_URL "https://10.170.8.130:8444/move"
 #define AI_MISSION_URL "https://10.170.8.109:8444/mission_end"
+#define LOCAL_MISSION_URL "http://localhost:8080/mission_end"
 #define DEVICE_ID "mini-pupper-01"
 
 /* for converting time to a more user-friendly format */
@@ -201,6 +202,8 @@ static int telemetry_init(void){
   curl_easy_setopt(g_curl,CURLOPT_POST,1L);
   curl_easy_setopt(g_curl,CURLOPT_SSL_VERIFYPEER,0L);
   curl_easy_setopt(g_curl,CURLOPT_SSL_VERIFYHOST,0L);
+  curl_easy_setopt(g_curl,CURLOPT_TIMEOUT,2L);
+  curl_easy_setopt(g_curl,CURLOPT_CONNECTTIMEOUT,1L);
   return 1;
 }
 
@@ -213,11 +216,11 @@ static void telemetry_shutdown(void){
 static void telemetry_send(int px,int py,bool won){
   if(!g_curl) return;
 
-  uint64_t ts=SDL_GetTicks64();
+  uint32_t ts=SDL_GetTicks();
   char json[256];
 
   snprintf(json,sizeof(json),
-    "{\"device_id\":\"%s\",\"ts_ms\":%" PRIu64
+    "{\"device_id\":\"%s\",\"ts_ms\":%" PRIu32
     ",\"player\":{\"x\":%d,\"y\":%d},\"won\":%s}",
     DEVICE_ID,ts,px,py,won?"true":"false");
 
@@ -278,12 +281,19 @@ static void ai_mission_send(const char* result,const char* abort_reason){
 
   curl_easy_perform(g_curl);
   curl_slist_free_all(headers);
+  headers = curl_slist_append(NULL, "Content-Type: application/json");
+  curl_easy_setopt(g_curl, CURLOPT_URL, LOCAL_MISSION_URL);
+  curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, json);
+  curl_easy_perform(g_curl);
+  curl_slist_free_all(headers);
 }
 
 /* ================= main ================= */
 
 int main(void){
   srand((unsigned)time(NULL));
+
 
   if(SDL_Init(SDL_INIT_VIDEO)!=0) return 1;
   telemetry_init();
@@ -316,7 +326,7 @@ int main(void){
       if(e.type==SDL_KEYDOWN){
         SDL_Keycode k=e.key.keysym.sym;
 
-        if(k==SDLK_ESCAPE){
+        if(k==SDLK_ESCAPE || k==SDLK_q){
           if(mission_active)
             ai_mission_send("aborted","user exited");
           running=false;
@@ -343,8 +353,10 @@ int main(void){
 
           if(px==MAZE_W-1&&py==MAZE_H-1){
             won=true;
-            if(mission_active)
+            if(mission_active){
               ai_mission_send("success","none");
+              mission_active=false;
+            }
             SDL_SetWindowTitle(win,"You win! Press R to regenerate");
           }
         }
@@ -355,10 +367,12 @@ int main(void){
     draw_player_goal(r,px,py);
     SDL_RenderPresent(r);
   }
-
+// Shell out to dashboard browser
+// Restart server and launch dashboard
   SDL_DestroyRenderer(r);
   SDL_DestroyWindow(win);
   telemetry_shutdown();
   SDL_Quit();
+  system("xinit /usr/bin/chromium-browser --kiosk --no-sandbox --disable-infobars http://localhost:8080/ -- :0");
   return 0;
 }

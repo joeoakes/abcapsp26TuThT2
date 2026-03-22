@@ -636,29 +636,15 @@
   </div>
 
   <!-- JSON INPUT + EXECUTE -->
-  <div class="input-section">
-    <div class="panel input-panel">
-      <div class="panel-title">Mission Data Input — JSON Payload</div>
-      <div class="json-area-label">LOAD OR PASTE MISSION JSON DATA BELOW</div>
-      <textarea class="json-textarea" id="jsonInput" spellcheck="false" placeholder='{
-  "mission_id": "MSN-001",
-  "status": "success",
-  "device": { "id": "BOT-42", "firmware": "v3.1.0", "platform": "Arduino Mega", "battery": "87%", "connectivity": "WIFI" },
-  "metrics": { "total_distance_cm": 540, "duration_seconds": 34, "total_moves": 22 },
-  "movement": { "forward": 9, "reverse": 4, "left": 5, "right": 4 },
-  "timeline": { "start": "2025-10-12T09:14:02Z", "end": "2025-10-12T09:14:36Z" }
-}'></textarea>
+
+  <!-- AUTO-FETCH STATUS BAR (replaces manual JSON input) -->
+  <div class="panel" style="grid-column: span 3; display:flex; align-items:center; justify-content:space-between; padding: 14px 20px;">
+    <div style="font-family:var(--mono); font-size:10px; color:var(--text-dim); letter-spacing:2px;">
+      AUTO-FETCH MODE · LOCAL MISSION SERVER
     </div>
-    <div class="execute-panel">
-      <div class="corner-tl"></div>
-      <div class="corner-tr"></div>
-      <div class="exec-title">Execute Mission</div>
-      <div class="exec-status" id="execStatus">
-        <span id="srcRedis">REDIS ····· IDLE</span>
-        <span id="srcMongo">MONGO ····· IDLE</span>
-        <span id="srcHttps">HTTPS ····· IDLE</span>
-      </div>
-      <button class="exec-btn" onclick="executeMission()">▶ EXECUTE</button>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <span id="fetchStatus" style="font-family:var(--mono); font-size:10px; color:var(--text-dim);">WAITING FOR MISSION DATA...</span>
+      <div id="fetchDot" style="width:8px;height:8px;border-radius:50%;background:var(--text-dim);"></div>
     </div>
   </div>
 
@@ -674,6 +660,11 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ─── CONFIG ──────────────────────────────────────────────
+const MISSION_SERVER = 'http://10.0.0.82:8080/latest_mission';
+const POLL_INTERVAL_MS = 3000;
+let lastMissionId = null;
+
 // ─── CLOCK ───────────────────────────────────────────────
 function updateClock() {
   const now = new Date();
@@ -690,6 +681,16 @@ function showToast(msg, isError=false) {
   t.className = 'toast' + (isError?' error':'');
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ─── FETCH DOT INDICATOR ─────────────────────────────────
+function setFetchState(state, msg) {
+  const dot = document.getElementById('fetchDot');
+  const status = document.getElementById('fetchStatus');
+  status.textContent = msg;
+  if (state === 'ok')      { dot.style.background = 'var(--green)'; dot.style.boxShadow = '0 0 8px var(--green)'; }
+  else if (state === 'err'){ dot.style.background = 'var(--red)';   dot.style.boxShadow = '0 0 8px var(--red)'; }
+  else                     { dot.style.background = 'var(--amber)'; dot.style.boxShadow = '0 0 8px var(--amber)'; }
 }
 
 // ─── SIMULATE DB PING ────────────────────────────────────
@@ -714,11 +715,10 @@ function simDbPing(indicatorId, latencyId, minMs, maxMs, failChance=0.05) {
 // ─── ANIMATE NUMBER ──────────────────────────────────────
 function animateNumber(el, target, duration=800, decimals=0) {
   const start = performance.now();
-  const from = 0;
   function step(ts) {
     const progress = Math.min((ts - start) / duration, 1);
     const ease = 1 - Math.pow(1 - progress, 3);
-    const val = from + (target - from) * ease;
+    const val = 0 + (target - 0) * ease;
     el.textContent = decimals > 0 ? val.toFixed(decimals) : Math.floor(val);
     if (progress < 1) requestAnimationFrame(step);
   }
@@ -733,70 +733,45 @@ function formatElapsed(seconds) {
   return [h,m,s].map(v => String(v).padStart(2,'0')).join(':');
 }
 
-// ─── EXECUTE MISSION ─────────────────────────────────────
-function executeMission() {
-  const raw = document.getElementById('jsonInput').value.trim();
-  if (!raw) { showToast('⚠  NO JSON DATA PROVIDED', true); return; }
-
-  let data;
-  try { data = JSON.parse(raw); }
-  catch(e) { showToast('✖  INVALID JSON: ' + e.message, true); return; }
-
-  // Simulate DB pings
-  document.getElementById('srcRedis').textContent = 'REDIS ····· QUERYING';
-  document.getElementById('srcMongo').textContent = 'MONGO ····· QUERYING';
-  document.getElementById('srcHttps').textContent = 'HTTPS ····· QUERYING';
-
-  simDbPing('redisIndicator','redisLatency', 1, 12);
-  simDbPing('mongoIndicator','mongoLatency', 8, 45);
-  simDbPing('httpsIndicator','httpsLatency', 20, 120, 0.08);
-
-  setTimeout(() => {
-    document.getElementById('srcRedis').textContent = 'REDIS ····· OK';
-    document.getElementById('srcMongo').textContent = 'MONGO ····· OK';
-    document.getElementById('srcHttps').textContent = 'HTTPS ····· OK';
-  }, 1200);
-
+// ─── RENDER MISSION DATA ─────────────────────────────────
+function renderMission(data) {
   // ── STATUS BADGE
   const badge = document.getElementById('statusBadge');
-  const status = (data.status || 'standby').toLowerCase();
+  const result = (data.mission_result || data.status || 'standby').toLowerCase();
   badge.className = 'status-badge';
-  if (status === 'success') { badge.classList.add('success'); badge.textContent = 'SUCCESS'; }
-  else if (status === 'failure' || status === 'failed') { badge.classList.add('failure'); badge.textContent = 'FAILURE'; }
-  else { badge.classList.add('standby'); badge.textContent = 'STANDBY'; }
+  if (result === 'success')                         { badge.classList.add('success'); badge.textContent = 'SUCCESS'; }
+  else if (result === 'failure' || result === 'failed' || result === 'aborted') { badge.classList.add('failure'); badge.textContent = result.toUpperCase(); }
+  else                                              { badge.classList.add('standby'); badge.textContent = 'STANDBY'; }
 
-  // ── KEY METRICS
+  // ── KEY METRICS — support both dashboard JSON shape and maze_sdl2 shape
   const m = data.metrics || {};
-  const dist = m.total_distance_cm || m.total_distance || m.distance || 0;
-  const dur  = m.duration_seconds  || m.duration || 0;
-  const moves = m.total_moves || m.moves || 0;
+  const dist  = m.total_distance_cm || m.total_distance || data.distance_traveled || 0;
+  const dur   = m.duration_seconds  || m.duration || data.duration_seconds || 0;
+  const moves = m.total_moves || m.moves || data.moves_total || 0;
 
-  const dEl = document.getElementById('metricDistance');
-  const durEl = document.getElementById('metricDuration');
-  const mvEl = document.getElementById('metricMoves');
-  animateNumber(dEl, dist);
-  animateNumber(durEl, dur);
-  animateNumber(mvEl, moves);
+  animateNumber(document.getElementById('metricDistance'), dist, 800, 2);
+  animateNumber(document.getElementById('metricDuration'), dur);
+  animateNumber(document.getElementById('metricMoves'),    moves);
 
   setTimeout(() => {
     document.getElementById('barDistance').style.width = Math.min(dist / 10, 100) + '%';
-    document.getElementById('barDuration').style.width  = Math.min(dur / 2, 100) + '%';
+    document.getElementById('barDuration').style.width = Math.min(dur  / 2,  100) + '%';
     document.getElementById('barMoves').style.width    = Math.min(moves * 4, 100) + '%';
   }, 50);
 
-  // ── MOVEMENT
-  const mv = data.movement || {};
-  const fwd = mv.forward || 0;
-  const rev = mv.reverse || mv.backward || 0;
-  const lft = mv.left || 0;
-  const rgt = mv.right || 0;
+  // ── MOVEMENT — support both shapes
+  const mv  = data.movement || {};
+  const fwd = mv.forward  || data.moves_straight      || 0;
+  const rev = mv.reverse  || mv.backward || data.moves_reverse || 0;
+  const lft = mv.left     || data.moves_left_turn     || 0;
+  const rgt = mv.right    || data.moves_right_turn    || 0;
   const total = fwd + rev + lft + rgt || 1;
 
   const pct = v => ((v/total)*100).toFixed(1);
-  document.getElementById('moveFwd').textContent = fwd;
-  document.getElementById('moveRev').textContent = rev;
-  document.getElementById('moveLft').textContent = lft;
-  document.getElementById('moveRgt').textContent = rgt;
+  document.getElementById('moveFwd').textContent    = fwd;
+  document.getElementById('moveRev').textContent    = rev;
+  document.getElementById('moveLft').textContent    = lft;
+  document.getElementById('moveRgt').textContent    = rgt;
   document.getElementById('moveFwdPct').textContent = pct(fwd) + ' % of total';
   document.getElementById('moveRevPct').textContent = pct(rev) + ' % of total';
   document.getElementById('moveLftPct').textContent = pct(lft) + ' % of total';
@@ -810,40 +785,74 @@ function executeMission() {
 
   // ── TIMELINE
   const tl = data.timeline || {};
-  const startRaw = tl.start || tl.start_time || null;
-  const endRaw   = tl.end   || tl.end_time   || null;
+  const startRaw = tl.start || tl.start_time || data.start_time || null;
+  const endRaw   = tl.end   || tl.end_time   || data.end_time   || null;
 
   function fmtTime(iso) {
     if (!iso) return 'NOT PROVIDED';
-    try {
-      return new Date(iso).toISOString().replace('T',' ').substring(0,19) + ' UTC';
-    } catch { return iso; }
+    try { return new Date(iso).toISOString().replace('T',' ').substring(0,19) + ' UTC'; }
+    catch { return iso; }
   }
-  document.getElementById('tlStart').textContent = fmtTime(startRaw);
-  document.getElementById('tlEnd').textContent   = fmtTime(endRaw);
-
+  document.getElementById('tlStart').textContent   = fmtTime(startRaw);
+  document.getElementById('tlEnd').textContent     = fmtTime(endRaw);
   const elSec = (startRaw && endRaw)
     ? Math.round((new Date(endRaw) - new Date(startRaw)) / 1000)
     : (dur || 0);
   document.getElementById('tlElapsed').textContent = formatElapsed(elSec);
 
-  // ── DEVICE INFO
+  // ── DEVICE INFO — support both shapes
   const dev = data.device || {};
-  document.getElementById('devId').textContent       = dev.id || dev.device_id || '—';
-  document.getElementById('devFW').textContent       = dev.firmware || dev.firmware_version || '—';
-  document.getElementById('devPlatform').textContent = dev.platform || dev.hardware || '—';
-  document.getElementById('devBattery').textContent  = dev.battery || dev.battery_level || '—';
+  document.getElementById('devId').textContent       = dev.id || dev.device_id || data.device_id || '—';
+  document.getElementById('devFW').textContent       = dev.firmware || dev.firmware_version || data.firmware || '—';
+  document.getElementById('devPlatform').textContent = dev.platform || dev.hardware || data.platform || 'Mini-Pupper';
+  document.getElementById('devBattery').textContent  = dev.battery || dev.battery_level || data.battery || '—';
   const connEl = document.getElementById('devConn');
-  connEl.textContent = dev.connectivity || dev.connection || '—';
+  connEl.textContent = dev.connectivity || dev.connection || data.connectivity || 'WIFI';
   connEl.className = 'device-val online';
 
-  // ── TICKER
-  const mid = data.mission_id || data.id || 'UNKNOWN';
-  document.getElementById('clockTicker').textContent =
-    `─── MISSION ${mid} · LOADED · ${new Date().toISOString().substring(11,19)} UTC ───`;
+  // ── DB PINGS (simulated)
+  simDbPing('redisIndicator','redisLatency', 1, 12);
+  simDbPing('mongoIndicator','mongoLatency', 8, 45);
+  simDbPing('httpsIndicator','httpsLatency', 20, 120, 0.08);
 
-  showToast('✔  MISSION DATA LOADED SUCCESSFULLY');
+  // ── TICKER
+  const mid = data.mission_id || data.id || data.team || 'TEAM2TT';
+  document.getElementById('clockTicker').textContent =
+    `─── MISSION DATA RECEIVED · ${mid.toUpperCase()} · ${new Date().toISOString().substring(11,19)} UTC ───`;
 }
+
+// ─── POLL LOOP ───────────────────────────────────────────
+async function pollMission() {
+  try {
+    const resp = await fetch(MISSION_SERVER);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.status === 'no_mission_yet') {
+      setFetchState('warn', 'WAITING FOR MISSION DATA...');
+      return;
+    }
+
+    // Use a fingerprint to detect new missions
+    const fingerprint = JSON.stringify(data);
+    if (fingerprint !== lastMissionId) {
+      lastMissionId = fingerprint;
+      renderMission(data);
+      showToast('✔  MISSION DATA UPDATED');
+      setFetchState('ok', `LAST UPDATE: ${new Date().toISOString().substring(11,19)} UTC`);
+    } else {
+      setFetchState('ok', `LIVE · LAST UPDATE: ${new Date().toISOString().substring(11,19)} UTC`);
+    }
+  } catch(e) {
+    setFetchState('err', 'SERVER UNREACHABLE — RETRYING...');
+    console.warn('Poll error:', e);
+  }
+}
+
+// Start polling
+pollMission();
+setInterval(pollMission, POLL_INTERVAL_MS);
 </script>
 </body>
 </html>
+

@@ -20,7 +20,7 @@
 // Configuration
 #define WINDOW_W  800
 #define WINDOW_H  600
-#define DEFAULT_ROBOT_IP "10.170.8.109"
+#define DEFAULT_ROBOT_IP "10.170.8.136"
 #define ROBOT_PORT 8444
 #define COMMAND_INTERVAL_MS 100
 #define CAMERA_FETCH_INTERVAL_MS 150  // ~6-7 FPS camera fetch

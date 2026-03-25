@@ -6,6 +6,7 @@ HTTPS server + ROS2 node for Mini-Pupper control and camera streaming.
 Endpoints:
     POST /move          - Send movement commands {"move_dir": "forward/backward/left/right/stop"}
     GET  /camera        - Get latest JPEG frame from camera
+    GET  /tags          - Get latest AprilTag detections (JSON)
     GET  /health        - Health check
 
 Usage:
@@ -27,6 +28,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import CompressedImage
+from std_msgs.msg import String
 
 # Configuration
 HTTPS_PORT = int(os.environ.get("LISTEN_PORT", "8444"))
@@ -38,6 +40,7 @@ DEFAULT_ANGULAR_SPEED = 0.5
 SAFETY_TIMEOUT = 0.5
 CMD_VEL_TOPIC = "/cmd_vel"
 CAMERA_TOPIC = "/camera/image_raw/compressed"
+APRILTAG_TOPIC = "/apriltag/detections"
 PUBLISH_RATE = 10.0
 
 
@@ -61,6 +64,17 @@ class PupperController(Node):
         )
         self.get_logger().info(f"Subscribing to {CAMERA_TOPIC}")
 
+        # AprilTag subscriber
+        self._tag_lock = threading.Lock()
+        self._latest_tags = '{"count":0,"tags":[]}'
+        self.tag_sub = self.create_subscription(
+            String,
+            APRILTAG_TOPIC,
+            self._tag_callback,
+            10
+        )
+        self.get_logger().info(f"Subscribing to {APRILTAG_TOPIC}")
+
         # Velocity state
         self._vel_lock = threading.Lock()
         self._linear_x = 0.0
@@ -75,6 +89,10 @@ class PupperController(Node):
             self._latest_frame = bytes(msg.data)
             self._frame_count += 1
 
+    def _tag_callback(self, msg):
+        with self._tag_lock:
+            self._latest_tags = msg.data
+
     def get_latest_frame(self):
         with self._camera_lock:
             return self._latest_frame
@@ -82,6 +100,10 @@ class PupperController(Node):
     def get_frame_count(self):
         with self._camera_lock:
             return self._frame_count
+
+    def get_latest_tags(self):
+        with self._tag_lock:
+            return self._latest_tags
 
     def set_velocity(self, linear_x, angular_z):
         with self._vel_lock:
@@ -153,6 +175,17 @@ class MoveHandler(BaseHTTPRequestHandler):
             else:
                 self._send_json(503, {"error": "No camera frame available yet"})
 
+        elif self.path == "/tags":
+            tags_json = _ros_node.get_latest_tags()
+            data = tags_json.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(data))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-cache, no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
         elif self.path == "/health":
             self._send_json(200, {
                 "ok": True,
@@ -166,6 +199,7 @@ class MoveHandler(BaseHTTPRequestHandler):
                 "endpoints": {
                     "POST /move": "Movement commands",
                     "GET /camera": "Latest JPEG frame",
+                    "GET /tags": "Latest AprilTag detections",
                     "GET /health": "Health check"
                 }
             })
@@ -247,6 +281,7 @@ def run_https_server(port, certfile, keyfile):
     print(f"[HTTPS] Listening on https://0.0.0.0:{port}")
     print(f"[HTTPS] POST /move   - Movement commands")
     print(f"[HTTPS] GET  /camera - Latest JPEG frame")
+    print(f"[HTTPS] GET  /tags   - AprilTag detections")
     print(f"[HTTPS] GET  /health - Health check")
     server.serve_forever()
 
@@ -277,6 +312,7 @@ def main():
     print(f"[ROS2] Node 'pupper_https_controller' running")
     print(f"[ROS2] Publishing to {CMD_VEL_TOPIC} at {PUBLISH_RATE} Hz")
     print(f"[ROS2] Subscribing to {CAMERA_TOPIC}")
+    print(f"[ROS2] Subscribing to {APRILTAG_TOPIC}")
     print(f"[ROS2] Safety timeout: {SAFETY_TIMEOUT}s")
     print(f"[INFO] Ready for commands. Ctrl+C to stop.")
 

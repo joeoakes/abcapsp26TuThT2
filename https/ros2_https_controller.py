@@ -37,7 +37,7 @@ KEY_FILE = os.environ.get("TLS_KEY", "certs/server.key")
 
 DEFAULT_LINEAR_SPEED = 0.15
 DEFAULT_ANGULAR_SPEED = 0.5
-SAFETY_TIMEOUT = 0.5
+SAFETY_TIMEOUT = 5.0
 CMD_VEL_TOPIC = "/cmd_vel"
 CAMERA_TOPIC = "/camera/image_raw/compressed"
 APRILTAG_TOPIC = "/apriltag/detections"

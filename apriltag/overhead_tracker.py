@@ -26,11 +26,21 @@ import json
 import time
 import os
 import sys
+import ssl
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # ─── Configuration ────────────────────────────────────────
 
-# Robot tag IDs (mounted on Mini-Pupper)
+# Robot tag IDs (mounted on Mini-Pupper) and yaw offsets
+# The offset corrects the arrow to always point toward the front of the robot
 ROBOT_TAG_IDS = {288, 289, 290, 301}
+ROBOT_TAG_YAW_OFFSET = {
+    301: 90.0,     # top - no correction needed
+    289: 90.0,   # back - flip 180
+    290: 0.0,   # left side - rotate -90
+    288: 180.0,    # right side - rotate +90
+}
 
 # Maze reference tag IDs (placed at fixed points in maze space)
 # Update these with the actual tag IDs you place in the maze
@@ -60,6 +70,10 @@ CAMERA_CY = 360.0
 WINDOW_NAME = "Overhead Maze Tracker"
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
+# HTTPS server port for serving robot position data
+HTTPS_PORT = 8090
+CERT_FILE = os.environ.get("TLS_CERT", os.path.join(os.path.dirname(__file__), "..", "https", "certs", "server.crt"))
+KEY_FILE = os.environ.get("TLS_KEY", os.path.join(os.path.dirname(__file__), "..", "https", "certs", "server.key"))
 # Colors (BGR)
 COLOR_ROBOT = (0, 255, 0)       # Green for robot tags
 COLOR_MAZE_REF = (255, 165, 0)  # Orange for maze reference tags
@@ -125,6 +139,7 @@ class TrackerState:
         self.last_fps_time = time.time()
         self.last_fps_count = 0
         self.screenshot_count = 0
+        self._lock = threading.Lock()
 
     def update_fps(self):
         """Update FPS counter."""
@@ -145,6 +160,84 @@ class TrackerState:
         """Clear the robot trail."""
         self.robot_positions.clear()
 
+    def get_robot_data(self):
+        """Thread-safe getter for HTTP server."""
+        with self._lock:
+            return {
+                "visible": self.robot_visible,
+                "yaw": round(self.robot_yaw, 1) if self.robot_yaw is not None else None,
+                "position": {
+                    "x": round(self.robot_world_pos[0], 4),
+                    "y": round(self.robot_world_pos[1], 4),
+                    "z": round(self.robot_world_pos[2], 4)
+                } if self.robot_world_pos else None
+            }
+
+    def set_robot_data(self, visible, yaw, world_pos):
+        """Thread-safe setter called from main loop."""
+        with self._lock:
+            self.robot_visible = visible
+            self.robot_yaw = yaw
+            self.robot_world_pos = world_pos
+
+
+# Global state reference for HTTP handler
+_tracker_state = None
+
+
+class TrackerHTTPHandler(BaseHTTPRequestHandler):
+    """HTTP server that serves robot position data."""
+
+    def log_message(self, format, *args):
+        # Suppress noisy request logging
+        pass
+
+    def do_GET(self):
+        if self.path == "/robot" or self.path == "/robot_heading":
+            data = _tracker_state.get_robot_data()
+            body = json.dumps(data).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(body))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-cache, no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        elif self.path == "/health":
+            body = json.dumps({"ok": True, "service": "overhead_tracker"}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+
+        else:
+            body = json.dumps({
+                "service": "Overhead Maze Tracker",
+                "endpoints": {
+                    "GET /robot": "Robot position and heading",
+                    "GET /health": "Health check"
+                }
+            }).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+
+
+def run_https_server(port, certfile, keyfile):
+    server = HTTPServer(("0.0.0.0", port), TrackerHTTPHandler)
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
+    server.socket = ctx.wrap_socket(server.socket, server_side=True)
+
+    print(f"[HTTPS] Serving robot data on https://0.0.0.0:{port}")
+    print(f"[HTTPS] GET /robot - Robot position and heading")
+    server.serve_forever()
+
 
 # ─── Main ─────────────────────────────────────────────────
 
@@ -153,7 +246,7 @@ def main():
 
     # Try to open camera
     print(f"[TRACKER] Opening camera index {cam_index}...")
-    cap = cv2.VideoCapture(cam_index, cv2.CAP_AVFOUNDATION)
+    cap = cv2.VideoCapture(cam_index)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
 
@@ -193,11 +286,28 @@ def main():
 
     state = TrackerState()
 
+    # Start HTTPS server in background thread
+    global _tracker_state
+    _tracker_state = state
+
+    if os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE):
+        https_thread = threading.Thread(
+            target=run_https_server,
+            args=(HTTPS_PORT, CERT_FILE, KEY_FILE),
+            daemon=True
+        )
+        https_thread.start()
+    else:
+        print(f"[WARN] TLS certs not found: {CERT_FILE}, {KEY_FILE}")
+        print(f"[WARN] Generate with: mkdir -p certs && openssl req -x509 -newkey rsa:2048 "
+              f"-keyout certs/server.key -out certs/server.crt -days 365 -nodes -subj '/CN=localhost'")
+        print(f"[WARN] HTTPS server not started - maze will use fixed-time rotation fallback")
+
     while True:
         ok, frame = cap.read()
         if not ok:
-            print("[ERROR] Failed to read frame")
-            break
+            time.sleep(0.01)
+            continue
 
         state.frame_count += 1
         state.update_fps()
@@ -205,69 +315,103 @@ def main():
         # Convert to grayscale for detection
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # Detect tags
-        tags = detector.detect(
-            gray,
-            estimate_tag_pose=True,
-            camera_params=(fx, fy, cx, cy),
-            tag_size=TAG_SIZE_M
-        )
+        # Detect tags (with error handling for bad pose estimates at distance)
+        tags = []
+        try:
+            tags = detector.detect(
+                gray,
+                estimate_tag_pose=True,
+                camera_params=(fx, fy, cx, cy),
+                tag_size=TAG_SIZE_M
+            )
+        except Exception as e:
+            # Detection can fail with bad image data - skip this frame
+            pass
 
         # Process detections
         state.robot_visible = False
         best_robot_tag = None
         best_robot_margin = 0
+        robot_found_this_frame = False
 
         for tag in tags:
-            tag_type, color = classify_tag(tag.tag_id)
+            try:
+                tag_type, color = classify_tag(tag.tag_id)
 
-            # Draw tag outline
-            center_px = draw_tag_outline(frame, tag.corners, color, 2)
+                # Draw tag outline
+                center_px = draw_tag_outline(frame, tag.corners, color, 2)
 
-            # Extract pose
-            tx, ty, tz = tag.pose_t.flatten().tolist()
-            yaw = rotation_matrix_to_yaw(tag.pose_R)
+                # Extract pose - can produce bad values at long distance
+                if tag.pose_t is None or tag.pose_R is None:
+                    continue
 
-            # Draw tag info
-            label = f"ID:{tag.tag_id} ({tag_type})"
-            draw_text_shadowed(frame, label, (center_px[0] + 10, center_px[1] - 20),
-                               scale=0.5, color=color)
+                tx, ty, tz = tag.pose_t.flatten().tolist()
 
-            pos_label = f"z:{tz:.2f}m yaw:{yaw:.0f}deg"
-            draw_text_shadowed(frame, pos_label, (center_px[0] + 10, center_px[1]),
-                               scale=0.4, color=color)
+                # Sanity check - skip wildly unreasonable poses
+                if abs(tx) > 50 or abs(ty) > 50 or abs(tz) > 50 or tz <= 0:
+                    continue
 
-            if tag_type == "robot":
-                # Track the best (highest confidence) robot tag
-                if tag.decision_margin > best_robot_margin:
-                    best_robot_margin = tag.decision_margin
-                    best_robot_tag = tag
-                    state.robot_visible = True
-                    state.robot_world_pos = (tx, ty, tz)
-                    state.robot_yaw = yaw
+                yaw = rotation_matrix_to_yaw(tag.pose_R)
 
-            elif tag_type == "maze_ref":
-                state.maze_refs[tag.tag_id] = {
-                    "pos": (tx, ty, tz),
-                    "yaw": yaw,
-                    "center_px": center_px
-                }
+                # Draw tag info
+                label = f"ID:{tag.tag_id} ({tag_type})"
+                draw_text_shadowed(frame, label, (center_px[0] + 10, center_px[1] - 20),
+                                   scale=0.5, color=color)
+
+                pos_label = f"z:{tz:.2f}m yaw:{yaw:.0f}deg"
+                draw_text_shadowed(frame, pos_label, (center_px[0] + 10, center_px[1]),
+                                   scale=0.4, color=color)
+
+                if tag_type == "robot":
+                    # Apply yaw offset based on which face of the cube this tag is on
+                    corrected_yaw = yaw + ROBOT_TAG_YAW_OFFSET.get(tag.tag_id, 0.0)
+                    # Normalize to -180 to 180
+                    while corrected_yaw > 180: corrected_yaw -= 360
+                    while corrected_yaw < -180: corrected_yaw += 360
+
+                    # Track the best (highest confidence) robot tag
+                    if tag.decision_margin > best_robot_margin:
+                        best_robot_margin = tag.decision_margin
+                        best_robot_tag = tag
+                        state.robot_visible = True
+                        state.robot_world_pos = (tx, ty, tz)
+                        state.robot_yaw = corrected_yaw
+                        # Thread-safe update for HTTP server
+                        state.set_robot_data(True, corrected_yaw, (tx, ty, tz))
+
+                elif tag_type == "maze_ref":
+                    state.maze_refs[tag.tag_id] = {
+                        "pos": (tx, ty, tz),
+                        "yaw": yaw,
+                        "center_px": center_px
+                    }
+
+            except Exception as e:
+                # Skip any tag that causes an error
+                continue
+
+        # If no robot tag found this frame, update thread-safe state
+        if not state.robot_visible:
+            state.set_robot_data(False, state.robot_yaw, state.robot_world_pos)
 
         # Update robot trail
         if best_robot_tag is not None:
-            cx_robot = int(np.mean(best_robot_tag.corners[:, 0]))
-            cy_robot = int(np.mean(best_robot_tag.corners[:, 1]))
-            state.add_robot_position(cx_robot, cy_robot)
+            try:
+                cx_robot = int(np.mean(best_robot_tag.corners[:, 0]))
+                cy_robot = int(np.mean(best_robot_tag.corners[:, 1]))
+                state.add_robot_position(cx_robot, cy_robot)
 
-            # Draw direction arrow from robot center
-            arrow_len = 40
-            angle_rad = math.radians(state.robot_yaw)
-            arrow_end = (
-                int(cx_robot + arrow_len * math.cos(angle_rad)),
-                int(cy_robot + arrow_len * math.sin(angle_rad))
-            )
-            cv2.arrowedLine(frame, (cx_robot, cy_robot), arrow_end,
-                            COLOR_ROBOT, 3, tipLength=0.3)
+                # Draw direction arrow from robot center
+                arrow_len = 40
+                angle_rad = math.radians(state.robot_yaw)
+                arrow_end = (
+                    int(cx_robot + arrow_len * math.cos(angle_rad)),
+                    int(cy_robot + arrow_len * math.sin(angle_rad))
+                )
+                cv2.arrowedLine(frame, (cx_robot, cy_robot), arrow_end,
+                                COLOR_ROBOT, 3, tipLength=0.3)
+            except Exception:
+                pass
 
         # Draw robot trail
         if len(state.robot_positions) > 1:

@@ -25,19 +25,16 @@
 #define DEVICE_ID "mini-pupper-01"
 
 /* Robot control config */
-#define DEFAULT_ROBOT_IP "10.170.8.109"
+#define DEFAULT_ROBOT_IP "10.170.8.136"
 #define ROBOT_PORT 8444
-#define ROBOT_STEP_DURATION_MS 3000     /* How long to walk forward per step */
+#define ROBOT_CELL_SIZE_M 0.1016        /* 4 inches = 0.1016 meters per cell */
+#define ROBOT_MOVE_TIMEOUT_MS 8000      /* Max time for one forward step */
 #define ROBOT_ROTATE_TIMEOUT_MS 8000    /* Max time to wait for rotation */
 #define ROBOT_HEADING_TOLERANCE 15.0    /* Degrees - close enough to target */
-#define ROBOT_HEADING_POLL_MS 100       /* How often to check heading */
+#define ROBOT_HEADING_POLL_MS 100       /* How often to check heading/position */
+#define ROBOT_DISTANCE_TOLERANCE 0.02   /* Meters - close enough to target distance */
 
-/* Overhead camera config */
-#define DEFAULT_OVERHEAD_IP "0.0.0.0"   /* Will be set from args/env */
-#define OVERHEAD_PORT 8090
 static char g_robot_url[256] = "";
-static char g_overhead_url[256] = "";
-static bool g_overhead_available = false;
 
 /* for converting time to a more user-friendly format */
 static void format_time(time_t t, char *buf, size_t size) {
@@ -62,7 +59,6 @@ static bool mission_active = false;
 static bool robot_enabled = false;       /* Toggle with P key */
 static int robot_heading = 0;            /* 0=north, 90=east, 180=south, 270=west */
 static bool robot_moving = false;        /* Input locked while true */
-static Uint32 robot_unlock_time = 0;     /* When to unlock input */
 static bool robot_connected = false;     /* Last connection status */
 
 /* Heading constants */
@@ -422,54 +418,77 @@ static size_t response_write(void* contents, size_t size, size_t nmemb, void* us
   return total;
 }
 
-/* Fetch current robot heading from overhead camera.
-   Returns true if successful and writes heading to *out_yaw. */
-static bool overhead_get_heading(double* out_yaw) {
-  if (!g_curl || !g_overhead_available) return false;
+/* Fetch current robot odom (heading + position).
+   Returns true if successful. */
+static bool robot_get_odom(double* out_yaw, double* out_x, double* out_y) {
+  if (!g_curl) return false;
+
+  /* Build odom URL from robot URL: same host, /odom instead of /move */
+  char odom_url[256];
+  strncpy(odom_url, g_robot_url, sizeof(odom_url));
+  char* last_slash = strrchr(odom_url, '/');
+  if (last_slash) {
+    strcpy(last_slash, "/odom");
+  } else {
+    return false;
+  }
 
   ResponseBuf resp = { .size = 0 };
   resp.data[0] = '\0';
 
-  CURL* cam_curl = curl_easy_init();
-  if (!cam_curl) return false;
+  CURL* odom_curl = curl_easy_init();
+  if (!odom_curl) return false;
 
-  curl_easy_setopt(cam_curl, CURLOPT_URL, g_overhead_url);
-  curl_easy_setopt(cam_curl, CURLOPT_HTTPGET, 1L);
-  curl_easy_setopt(cam_curl, CURLOPT_TIMEOUT, 1L);
-  curl_easy_setopt(cam_curl, CURLOPT_CONNECTTIMEOUT, 1L);
-  curl_easy_setopt(cam_curl, CURLOPT_SSL_VERIFYPEER, 0L);
-  curl_easy_setopt(cam_curl, CURLOPT_SSL_VERIFYHOST, 0L);
-  curl_easy_setopt(cam_curl, CURLOPT_WRITEFUNCTION, response_write);
-  curl_easy_setopt(cam_curl, CURLOPT_WRITEDATA, &resp);
+  curl_easy_setopt(odom_curl, CURLOPT_URL, odom_url);
+  curl_easy_setopt(odom_curl, CURLOPT_HTTPGET, 1L);
+  curl_easy_setopt(odom_curl, CURLOPT_TIMEOUT, 1L);
+  curl_easy_setopt(odom_curl, CURLOPT_CONNECTTIMEOUT, 1L);
+  curl_easy_setopt(odom_curl, CURLOPT_SSL_VERIFYPEER, 0L);
+  curl_easy_setopt(odom_curl, CURLOPT_SSL_VERIFYHOST, 0L);
+  curl_easy_setopt(odom_curl, CURLOPT_WRITEFUNCTION, response_write);
+  curl_easy_setopt(odom_curl, CURLOPT_WRITEDATA, &resp);
 
-  CURLcode res = curl_easy_perform(cam_curl);
-  curl_easy_cleanup(cam_curl);
+  CURLcode res = curl_easy_perform(odom_curl);
+  curl_easy_cleanup(odom_curl);
 
   if (res != CURLE_OK) return false;
 
-  /* Simple JSON parse for "yaw": <number> and "visible": true */
-  char* vis = strstr(resp.data, "\"visible\"");
+  /* Check valid */
+  char* vis = strstr(resp.data, "\"valid\"");
   if (!vis) return false;
   if (!strstr(vis, "true")) return false;
 
+  /* Parse yaw */
   char* yaw_str = strstr(resp.data, "\"yaw\"");
   if (!yaw_str) return false;
   yaw_str = strchr(yaw_str, ':');
   if (!yaw_str) return false;
-  yaw_str++;
+  if (out_yaw) *out_yaw = strtod(yaw_str + 1, NULL);
 
-  double yaw = strtod(yaw_str, NULL);
-  *out_yaw = yaw;
+  /* Parse x */
+  char* x_str = strstr(resp.data, "\"x\"");
+  if (!x_str) return false;
+  x_str = strchr(x_str, ':');
+  if (!x_str) return false;
+  if (out_x) *out_x = strtod(x_str + 1, NULL);
+
+  /* Parse y */
+  char* y_str = strstr(resp.data, "\"y\"");
+  if (!y_str) return false;
+  y_str = strchr(y_str, ':');
+  if (!y_str) return false;
+  if (out_y) *out_y = strtod(y_str + 1, NULL);
+
   return true;
 }
 
-/* Rotate robot to target heading using overhead camera feedback.
-   Falls back to fixed-time rotation if camera is unavailable. */
+/* Rotate robot to target heading using odom feedback.
+   Falls back to fixed-time rotation if odom is unavailable. */
 static void robot_rotate_to(int target_heading) {
-  double current_yaw;
+  double current_yaw, dummy_x, dummy_y;
 
-  /* Try camera-guided rotation */
-  if (overhead_get_heading(&current_yaw)) {
+  /* Try odom-guided rotation */
+  if (robot_get_odom(&current_yaw, &dummy_x, &dummy_y)) {
     Uint32 start_time = SDL_GetTicks();
 
     while (SDL_GetTicks() - start_time < ROBOT_ROTATE_TIMEOUT_MS) {
@@ -492,10 +511,9 @@ static void robot_rotate_to(int target_heading) {
       SDL_Delay(ROBOT_HEADING_POLL_MS);
 
       /* Re-check heading */
-      if (!overhead_get_heading(&current_yaw)) {
-        /* Lost camera - stop and fall back */
+      if (!robot_get_odom(&current_yaw, &dummy_x, &dummy_y)) {
         robot_send_cmd("stop");
-        printf("[ROBOT] Lost overhead camera during rotation\n");
+        printf("[ROBOT] Lost odom during rotation\n");
         SDL_Delay(200);
         return;
       }
@@ -507,13 +525,12 @@ static void robot_rotate_to(int target_heading) {
     return;
   }
 
-  /* Fallback: fixed-time rotation (no camera available) */
-  printf("[ROBOT] No overhead camera - using fixed-time rotation\n");
+  /* Fallback: fixed-time rotation (no odom available) */
+  printf("[ROBOT] No odom available - using fixed-time rotation\n");
   int diff = (int)heading_diff_d((double)robot_heading, (double)target_heading);
 
   if (diff == 0) return;
 
-  /* Estimate time: ~3 seconds per 90 degrees at 0.5 rad/s */
   int abs_diff = abs(diff);
   int rotate_ms = (abs_diff * 3000) / 90;
 
@@ -528,35 +545,75 @@ static void robot_rotate_to(int target_heading) {
   SDL_Delay(200);
 }
 
-/* Execute a maze move: rotate to target heading then walk forward.
-   Sets robot_moving=true and robot_unlock_time for input lock. */
+/* Walk forward one cell using odom distance feedback.
+   Falls back to time-based if odom unavailable. */
+static void robot_walk_one_cell(void) {
+  double start_yaw, start_x, start_y;
+
+  /* Try distance-based movement */
+  if (robot_get_odom(&start_yaw, &start_x, &start_y)) {
+    Uint32 start_time = SDL_GetTicks();
+
+    robot_send_cmd("forward");
+
+    while (SDL_GetTicks() - start_time < ROBOT_MOVE_TIMEOUT_MS) {
+      SDL_Delay(ROBOT_HEADING_POLL_MS);
+
+      double cur_yaw, cur_x, cur_y;
+      if (!robot_get_odom(&cur_yaw, &cur_x, &cur_y)) {
+        robot_send_cmd("stop");
+        printf("[ROBOT] Lost odom during walk\n");
+        return;
+      }
+
+      double dx = cur_x - start_x;
+      double dy = cur_y - start_y;
+      double dist = sqrt(dx * dx + dy * dy);
+
+      if (dist >= ROBOT_CELL_SIZE_M - ROBOT_DISTANCE_TOLERANCE) {
+        robot_send_cmd("stop");
+        printf("[ROBOT] Walked %.3fm (target: %.3fm)\n", dist, ROBOT_CELL_SIZE_M);
+        return;
+      }
+    }
+
+    /* Timeout */
+    robot_send_cmd("stop");
+    printf("[ROBOT] Walk timeout\n");
+    return;
+  }
+
+  /* Fallback: time-based (no odom) */
+  printf("[ROBOT] No odom - using time-based walk\n");
+  robot_send_cmd("forward");
+  SDL_Delay(1500);
+  robot_send_cmd("stop");
+}
+
+/* Execute a maze move: rotate to target heading then walk one cell.
+   Blocks until complete. */
 static void robot_execute_move(int target_heading) {
   if (!robot_enabled) return;
+
+  robot_moving = true;
 
   /* Rotate to face the correct direction */
   if (robot_heading != target_heading) {
     robot_rotate_to(target_heading);
   }
 
-  /* Walk forward */
-  robot_send_cmd("forward");
+  /* Walk forward one cell */
+  robot_walk_one_cell();
 
   /* Update heading */
   robot_heading = target_heading;
 
-  /* Set input lock for walking duration */
-  robot_moving = true;
-  robot_unlock_time = SDL_GetTicks() + ROBOT_STEP_DURATION_MS;
+  robot_moving = false;
 }
 
-/* Check if robot is done moving and send stop */
+/* Robot update is now a no-op since movement blocks until complete */
 static void robot_update(void) {
-  if (!robot_moving) return;
-
-  if (SDL_GetTicks() >= robot_unlock_time) {
-    robot_send_cmd("stop");
-    robot_moving = false;
-  }
+  /* Movement is handled synchronously in robot_execute_move */
 }
 
 /* ================= main ================= */
@@ -574,24 +631,8 @@ int main(int argc, char* argv[]){
   }
   snprintf(g_robot_url, sizeof(g_robot_url), "https://%s:%d/move", robot_ip, ROBOT_PORT);
 
-  /* Get overhead camera IP from second argument or environment */
-  const char* overhead_ip = NULL;
-  if (argc > 2) {
-    overhead_ip = argv[2];
-  } else {
-    overhead_ip = getenv("OVERHEAD_IP");
-  }
-  if (overhead_ip && *overhead_ip) {
-    snprintf(g_overhead_url, sizeof(g_overhead_url), "https://%s:%d/robot", overhead_ip, OVERHEAD_PORT);
-    g_overhead_available = true;
-    printf("[MAZE] Overhead camera URL: %s\n", g_overhead_url);
-  } else {
-    g_overhead_available = false;
-    printf("[MAZE] No overhead camera configured (pass IP as 2nd arg or set OVERHEAD_IP)\n");
-    printf("[MAZE] Robot rotation will use fixed-time fallback\n");
-  }
-
   printf("[MAZE] Robot URL: %s\n", g_robot_url);
+  printf("[MAZE] Robot heading via odom: https://%s:%d/odom\n", robot_ip, ROBOT_PORT);
   printf("[MAZE] Press P to toggle robot control (currently OFF)\n");
 
   if(SDL_Init(SDL_INIT_VIDEO)!=0) return 1;

@@ -18,6 +18,7 @@ Expects TLS certs at certs/server.crt and certs/server.key.
 """
 
 import json
+import math
 import os
 import ssl
 import threading
@@ -27,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 
@@ -36,11 +38,12 @@ CERT_FILE = os.environ.get("TLS_CERT", "certs/server.crt")
 KEY_FILE = os.environ.get("TLS_KEY", "certs/server.key")
 
 DEFAULT_LINEAR_SPEED = 0.15
-DEFAULT_ANGULAR_SPEED = 0.5
+DEFAULT_ANGULAR_SPEED = 1.5
 SAFETY_TIMEOUT = 5.0
 CMD_VEL_TOPIC = "/cmd_vel"
 CAMERA_TOPIC = "/camera/image_raw/compressed"
 APRILTAG_TOPIC = "/apriltag/detections"
+ODOM_TOPIC = "/odom"
 PUBLISH_RATE = 10.0
 
 
@@ -75,6 +78,20 @@ class PupperController(Node):
         )
         self.get_logger().info(f"Subscribing to {APRILTAG_TOPIC}")
 
+        # Odometry subscriber
+        self._odom_lock = threading.Lock()
+        self._odom_x = 0.0
+        self._odom_y = 0.0
+        self._odom_yaw = 0.0
+        self._odom_valid = False
+        self.odom_sub = self.create_subscription(
+            Odometry,
+            ODOM_TOPIC,
+            self._odom_callback,
+            10
+        )
+        self.get_logger().info(f"Subscribing to {ODOM_TOPIC}")
+
         # Velocity state
         self._vel_lock = threading.Lock()
         self._linear_x = 0.0
@@ -93,6 +110,24 @@ class PupperController(Node):
         with self._tag_lock:
             self._latest_tags = msg.data
 
+    def _odom_callback(self, msg):
+        # Extract position
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+
+        # Convert quaternion to yaw (heading in degrees)
+        qz = msg.pose.pose.orientation.z
+        qw = msg.pose.pose.orientation.w
+        # Yaw from quaternion (only z rotation for ground robot)
+        yaw_rad = 2.0 * math.atan2(qz, qw)
+        yaw_deg = math.degrees(yaw_rad)
+
+        with self._odom_lock:
+            self._odom_x = x
+            self._odom_y = y
+            self._odom_yaw = yaw_deg
+            self._odom_valid = True
+
     def get_latest_frame(self):
         with self._camera_lock:
             return self._latest_frame
@@ -104,6 +139,15 @@ class PupperController(Node):
     def get_latest_tags(self):
         with self._tag_lock:
             return self._latest_tags
+
+    def get_odom(self):
+        with self._odom_lock:
+            return {
+                "valid": self._odom_valid,
+                "x": round(self._odom_x, 4),
+                "y": round(self._odom_y, 4),
+                "yaw": round(self._odom_yaw, 1)
+            }
 
     def set_velocity(self, linear_x, angular_z):
         with self._vel_lock:
@@ -139,7 +183,7 @@ class MoveHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         msg = format % args
-        if "/camera" not in msg:
+        if "/camera" not in msg and "/odom" not in msg:
             print(f"[HTTPS] {self.address_string()} - {msg}")
 
     def _send_json(self, code, body):
@@ -186,6 +230,10 @@ class MoveHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
 
+        elif self.path == "/odom":
+            odom_data = _ros_node.get_odom()
+            self._send_json(200, odom_data)
+
         elif self.path == "/health":
             self._send_json(200, {
                 "ok": True,
@@ -200,6 +248,7 @@ class MoveHandler(BaseHTTPRequestHandler):
                     "POST /move": "Movement commands",
                     "GET /camera": "Latest JPEG frame",
                     "GET /tags": "Latest AprilTag detections",
+                    "GET /odom": "Robot odometry (position + heading)",
                     "GET /health": "Health check"
                 }
             })
@@ -282,6 +331,7 @@ def run_https_server(port, certfile, keyfile):
     print(f"[HTTPS] POST /move   - Movement commands")
     print(f"[HTTPS] GET  /camera - Latest JPEG frame")
     print(f"[HTTPS] GET  /tags   - AprilTag detections")
+    print(f"[HTTPS] GET  /odom   - Robot odometry")
     print(f"[HTTPS] GET  /health - Health check")
     server.serve_forever()
 
@@ -313,6 +363,7 @@ def main():
     print(f"[ROS2] Publishing to {CMD_VEL_TOPIC} at {PUBLISH_RATE} Hz")
     print(f"[ROS2] Subscribing to {CAMERA_TOPIC}")
     print(f"[ROS2] Subscribing to {APRILTAG_TOPIC}")
+    print(f"[ROS2] Subscribing to {ODOM_TOPIC}")
     print(f"[ROS2] Safety timeout: {SAFETY_TIMEOUT}s")
     print(f"[INFO] Ready for commands. Ctrl+C to stop.")
 

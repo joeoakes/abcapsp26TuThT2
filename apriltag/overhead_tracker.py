@@ -36,23 +36,23 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 # The offset corrects the arrow to always point toward the front of the robot
 ROBOT_TAG_IDS = {288, 289, 290, 301}
 ROBOT_TAG_YAW_OFFSET = {
-    301: 90.0,     # top - no correction needed
-    289: 90.0,   # back - flip 180
-    290: 0.0,   # left side - rotate -90
-    288: 180.0,    # right side - rotate +90
+    301: 0.0,     # top - no correction needed
+    289: 180.0,   # back - flip 180
+    290: -90.0,   # left side - rotate -90
+    288: 90.0,    # right side - rotate +90
 }
 
 # Maze reference tag IDs (placed at fixed points in maze space)
-# Update these with the actual tag IDs you place in the maze
-MAZE_REF_TAG_IDS = set()  # e.g. {0, 1, 2, 3}
+# Reference cube at center of maze: tags 0 (N), 1 (E), 2 (S), 3 (W)
+MAZE_REF_TAG_IDS = {0, 1, 2, 3}
 
 # Maze origin tag ID - the tag that defines (0,0) in maze coordinates
-# Set this to one of your maze reference tags once you have them
-MAZE_ORIGIN_TAG_ID = None  # e.g. 0
+# The reference cube is at grid center (10, 7) in a 21x15 maze
+MAZE_ORIGIN_TAG_ID = 0
 
 # Tag family and size
 TAG_FAMILY = "tag36h11"
-TAG_SIZE_M = 0.152  # Physical tag size in meters
+TAG_SIZE_M = 0.0508  # Physical tag size in meters (~2 inches)
 
 # Camera settings
 CAMERA_INDEX = 0
@@ -72,8 +72,9 @@ FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 # HTTPS server port for serving robot position data
 HTTPS_PORT = 8090
-CERT_FILE = os.environ.get("TLS_CERT", os.path.join(os.path.dirname(__file__), "..", "https", "certs", "server.crt"))
-KEY_FILE = os.environ.get("TLS_KEY", os.path.join(os.path.dirname(__file__), "..", "https", "certs", "server.key"))
+CERT_FILE = os.environ.get("TLS_CERT", "certs/server.crt")
+KEY_FILE = os.environ.get("TLS_KEY", "certs/server.key")
+
 # Colors (BGR)
 COLOR_ROBOT = (0, 255, 0)       # Green for robot tags
 COLOR_MAZE_REF = (255, 165, 0)  # Orange for maze reference tags

@@ -38,11 +38,12 @@ CERT_FILE = os.environ.get("TLS_CERT", "certs/server.crt")
 KEY_FILE = os.environ.get("TLS_KEY", "certs/server.key")
 
 DEFAULT_LINEAR_SPEED = 0.15
-DEFAULT_ANGULAR_SPEED = 1.5
+DEFAULT_ANGULAR_SPEED = 0.5
 SAFETY_TIMEOUT = 5.0
 CMD_VEL_TOPIC = "/cmd_vel"
 CAMERA_TOPIC = "/camera/image_raw/compressed"
 APRILTAG_TOPIC = "/apriltag/detections"
+LOCALIZATION_TOPIC = "/apriltag/localization"
 ODOM_TOPIC = "/odom"
 PUBLISH_RATE = 10.0
 
@@ -91,6 +92,17 @@ class PupperController(Node):
             10
         )
         self.get_logger().info(f"Subscribing to {ODOM_TOPIC}")
+
+        # Localization subscriber (from apriltag detector seeing reference cube)
+        self._loc_lock = threading.Lock()
+        self._latest_loc = '{"valid":false}'
+        self.loc_sub = self.create_subscription(
+            String,
+            LOCALIZATION_TOPIC,
+            self._loc_callback,
+            10
+        )
+        self.get_logger().info(f"Subscribing to {LOCALIZATION_TOPIC}")
 
         # Velocity state
         self._vel_lock = threading.Lock()
@@ -149,6 +161,14 @@ class PupperController(Node):
                 "yaw": round(self._odom_yaw, 1)
             }
 
+    def _loc_callback(self, msg):
+        with self._loc_lock:
+            self._latest_loc = msg.data
+
+    def get_latest_localization(self):
+        with self._loc_lock:
+            return self._latest_loc
+
     def set_velocity(self, linear_x, angular_z):
         with self._vel_lock:
             self._linear_x = linear_x
@@ -183,7 +203,7 @@ class MoveHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         msg = format % args
-        if "/camera" not in msg and "/odom" not in msg:
+        if "/camera" not in msg and "/odom" not in msg and "/localization" not in msg:
             print(f"[HTTPS] {self.address_string()} - {msg}")
 
     def _send_json(self, code, body):
@@ -234,6 +254,17 @@ class MoveHandler(BaseHTTPRequestHandler):
             odom_data = _ros_node.get_odom()
             self._send_json(200, odom_data)
 
+        elif self.path == "/localization":
+            loc_json = _ros_node.get_latest_localization()
+            data = loc_json.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(data))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-cache, no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
         elif self.path == "/health":
             self._send_json(200, {
                 "ok": True,
@@ -249,6 +280,7 @@ class MoveHandler(BaseHTTPRequestHandler):
                     "GET /camera": "Latest JPEG frame",
                     "GET /tags": "Latest AprilTag detections",
                     "GET /odom": "Robot odometry (position + heading)",
+                    "GET /localization": "Robot position from reference cube",
                     "GET /health": "Health check"
                 }
             })
@@ -328,11 +360,12 @@ def run_https_server(port, certfile, keyfile):
     server.socket = ctx.wrap_socket(server.socket, server_side=True)
 
     print(f"[HTTPS] Listening on https://0.0.0.0:{port}")
-    print(f"[HTTPS] POST /move   - Movement commands")
-    print(f"[HTTPS] GET  /camera - Latest JPEG frame")
-    print(f"[HTTPS] GET  /tags   - AprilTag detections")
-    print(f"[HTTPS] GET  /odom   - Robot odometry")
-    print(f"[HTTPS] GET  /health - Health check")
+    print(f"[HTTPS] POST /move         - Movement commands")
+    print(f"[HTTPS] GET  /camera        - Latest JPEG frame")
+    print(f"[HTTPS] GET  /tags          - AprilTag detections")
+    print(f"[HTTPS] GET  /odom          - Robot odometry")
+    print(f"[HTTPS] GET  /localization  - Position from reference cube")
+    print(f"[HTTPS] GET  /health        - Health check")
     server.serve_forever()
 
 
@@ -363,6 +396,7 @@ def main():
     print(f"[ROS2] Publishing to {CMD_VEL_TOPIC} at {PUBLISH_RATE} Hz")
     print(f"[ROS2] Subscribing to {CAMERA_TOPIC}")
     print(f"[ROS2] Subscribing to {APRILTAG_TOPIC}")
+    print(f"[ROS2] Subscribing to {LOCALIZATION_TOPIC}")
     print(f"[ROS2] Subscribing to {ODOM_TOPIC}")
     print(f"[ROS2] Safety timeout: {SAFETY_TIMEOUT}s")
     print(f"[INFO] Ready for commands. Ctrl+C to stop.")

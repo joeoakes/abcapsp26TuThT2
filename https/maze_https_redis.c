@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <cjson/cJSON.h>
 
 #define DEFAULT_PORT 8444
 #define POSTBUFFERSIZE 4096
@@ -88,22 +89,61 @@ static enum MHD_Result handle_post(
 
     /* ================= Redis Insert ================= */
 
-    redisReply *reply = redisCommand(
-        redis,
-        "RPUSH team2tt_mission %s",
-        ci->data
-    );
+    cJSON* root = cJSON_Parse(ci->data);
 
-    if (!reply) {
-        fprintf(stderr, "Redis insert failed\n");
-    } else {
-        if (reply->type == REDIS_REPLY_INTEGER) {
-            long mission_id = reply->integer;
-            printf("Mission recorded. Mission ID: %ld\n", mission_id);
-        } else {
-            printf("Redis insert success (unexpected reply type)\n");
+    if (!root) {
+        fprintf(stderr, "Invalid JSON\n");
+    }
+    else {
+        cJSON* session = cJSON_GetObjectItem(root, "session_id");
+        cJSON* width = cJSON_GetObjectItem(root, "width");
+        cJSON* height = cJSON_GetObjectItem(root, "height");
+        cJSON* cells = cJSON_GetObjectItem(root, "cells");
+        cJSON* start = cJSON_GetObjectItem(root, "start");
+        cJSON* goal = cJSON_GetObjectItem(root, "goal");
+
+        if (session && width && height && cells && start && goal) {
+            const char* sid = session->valuestring;
+            char key[256];
+
+            /* width */
+            snprintf(key, sizeof(key), "team2ffmaze:%s:width", sid);
+            redisCommand(redis, "SET %s %d", key, width->valueint);
+
+            /* height */
+            snprintf(key, sizeof(key), "team2ffmaze:%s:height", sid);
+            redisCommand(redis, "SET %s %d", key, height->valueint);
+
+            /* cells */
+            char* cells_str = cJSON_PrintUnformatted(cells);
+            snprintf(key, sizeof(key), "team2ffmaze:%s:cells", sid);
+            redisCommand(redis, "SET %s %s", key, cells_str);
+            free(cells_str);
+
+            /* start */
+            cJSON* sx = cJSON_GetObjectItem(start, "x");
+            cJSON* sy = cJSON_GetObjectItem(start, "y");
+
+            snprintf(key, sizeof(key), "team2ffmaze:%s:start_x", sid);
+            redisCommand(redis, "SET %s %d", key, sx->valueint);
+
+            snprintf(key, sizeof(key), "team2ffmaze:%s:start_y", sid);
+            redisCommand(redis, "SET %s %d", key, sy->valueint);
+
+            /* goal */
+            cJSON* gx = cJSON_GetObjectItem(goal, "x");
+            cJSON* gy = cJSON_GetObjectItem(goal, "y");
+
+            snprintf(key, sizeof(key), "team2ffmaze:%s:goal_x", sid);
+            redisCommand(redis, "SET %s %d", key, gx->valueint);
+
+            snprintf(key, sizeof(key), "team2ffmaze:%s:goal_y", sid);
+            redisCommand(redis, "SET %s %d", key, gy->valueint);
+
+            printf("team2ffmaze stored for session: %s\n", sid);
         }
-        freeReplyObject(reply);
+
+        cJSON_Delete(root);
     }
 
     /* ================= HTTP Response ================= */

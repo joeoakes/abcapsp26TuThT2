@@ -31,6 +31,7 @@
 /* Robot control config */
 #define DEFAULT_ROBOT_IP "10.170.8.136"
 #define ROBOT_PORT 8444
+<<<<<<< HEAD
 #define ROBOT_CELL_SIZE_M 0.1016        /* 4 inches = 0.1016 meters per cell */
 #define ROBOT_MOVE_TIMEOUT_MS 8000      /* Max time for one forward step */
 #define ROBOT_ROTATE_TIMEOUT_MS 8000    /* Max time to wait for rotation */
@@ -39,6 +40,14 @@
 #define ROBOT_DISTANCE_TOLERANCE 0.02   /* Meters - close enough to target distance */
 
 /* Overhead camera correction config */
+=======
+#define ROBOT_STEP_DURATION_MS 3000
+#define ROBOT_ROTATE_TIMEOUT_MS 8000
+#define ROBOT_HEADING_TOLERANCE 15.0
+#define ROBOT_HEADING_POLL_MS 100
+
+/* Overhead camera config */
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 #define DEFAULT_OVERHEAD_IP "0.0.0.0"
 #define OVERHEAD_PORT 8090
 #define ROBOT_POSITION_CORRECTION_TOLERANCE 0.03  /* Meters - correct if off by more than this */
@@ -47,6 +56,7 @@ static char g_robot_url[256] = "";
 static char g_overhead_url[256] = "";
 static bool g_overhead_available = false;
 
+<<<<<<< HEAD
 /* Maze grid tracking - expected robot position in grid coordinates */
 static int robot_grid_x = 0;
 static int robot_grid_y = 0;
@@ -58,6 +68,10 @@ static int robot_grid_y = 0;
 #define REF_CUBE_TAG_IDS_E 1
 #define REF_CUBE_TAG_IDS_S 2
 #define REF_CUBE_TAG_IDS_W 3
+=======
+/* Session id for current maze */
+static char current_session_id[64] = "";
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
 /* for converting time to a more user-friendly format */
 static void format_time(time_t t, char *buf, size_t size) {
@@ -79,12 +93,19 @@ static bool mission_active = false;
 
 /* ================= Robot Control State ================= */
 
+<<<<<<< HEAD
 static bool robot_enabled = false;       /* Toggle with P key */
 static int robot_heading = 0;            /* 0=north, 90=east, 180=south, 270=west */
 static bool robot_moving = false;        /* Input locked while true */
 static bool robot_connected = false;     /* Last connection status */
+=======
+static bool robot_enabled = false;
+static int robot_heading = 0;
+static bool robot_moving = false;
+static Uint32 robot_unlock_time = 0;
+static bool robot_connected = false;
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
-/* Heading constants */
 #define HEADING_NORTH 0
 #define HEADING_EAST  90
 #define HEADING_SOUTH 180
@@ -170,6 +191,56 @@ static void maze_generate(int sx, int sy) {
       g[y][x].visited = false;
 }
 
+/* ================= Maze Serialization ================= */
+
+static char* build_maze_json(const char* session_id) {
+    static char json[16384];
+    char cells[12000];
+    int pos = 0;
+
+    pos += snprintf(cells + pos, sizeof(cells) - pos, "[");
+
+    for (int y = 0; y < MAZE_H; y++) {
+        for (int x = 0; x < MAZE_W; x++) {
+            int idx = y * MAZE_W + x;
+            uint8_t w = g[y][x].walls;
+
+            pos += snprintf(cells + pos, sizeof(cells) - pos,
+                "%s%d",
+                (idx == 0 ? "" : ","),
+                w
+            );
+        }
+    }
+
+    pos += snprintf(cells + pos, sizeof(cells) - pos, "]");
+
+    snprintf(json, sizeof(json),
+        "{"
+        "\"msg_type\":\"maze_init\","
+        "\"session_id\":\"%s\","
+        "\"width\":%d,"
+        "\"height\":%d,"
+        "\"start\":{\"x\":0,\"y\":0},"
+        "\"goal\":{\"x\":%d,\"y\":%d},"
+        "\"cells\":%s"
+        "}",
+        session_id,
+        MAZE_W,
+        MAZE_H,
+        MAZE_W - 1,
+        MAZE_H - 1,
+        cells
+    );
+
+    return json;
+}
+
+static void generate_session_id(void) {
+    snprintf(current_session_id, sizeof(current_session_id),
+             "session_%ld", time(NULL));
+}
+
 /* ================= Rendering ================= */
 
 static void draw_maze(SDL_Renderer* r) {
@@ -208,30 +279,26 @@ static void draw_player_goal(SDL_Renderer* r,int px,int py) {
   SDL_RenderFillRect(r,&p);
 }
 
-/* Draw robot status indicator */
 static void draw_robot_status(SDL_Renderer* r, int win_w, int win_h) {
   if (!robot_enabled) return;
 
-  /* Background bar at bottom */
   SDL_Rect bar = {0, win_h - 24, win_w, 24};
   SDL_SetRenderDrawColor(r, 10, 10, 30, 255);
   SDL_RenderFillRect(r, &bar);
 
-  /* Robot enabled indicator - green dot */
   SDL_Rect dot = {6, win_h - 18, 12, 12};
   if (robot_connected) {
-    SDL_SetRenderDrawColor(r, 57, 255, 20, 255);  /* green */
+    SDL_SetRenderDrawColor(r, 57, 255, 20, 255);
   } else {
-    SDL_SetRenderDrawColor(r, 255, 45, 85, 255);  /* red */
+    SDL_SetRenderDrawColor(r, 255, 45, 85, 255);
   }
   SDL_RenderFillRect(r, &dot);
 
-  /* Heading indicator arrow */
   int arrow_cx = win_w / 2;
   int arrow_cy = win_h - 12;
   int arrow_len = 8;
 
-  SDL_SetRenderDrawColor(r, 0, 245, 255, 255);  /* cyan */
+  SDL_SetRenderDrawColor(r, 0, 245, 255, 255);
 
   int dx = 0, dy = 0;
   switch (robot_heading) {
@@ -242,10 +309,9 @@ static void draw_robot_status(SDL_Renderer* r, int win_w, int win_h) {
   }
   SDL_RenderDrawLine(r, arrow_cx, arrow_cy, arrow_cx + dx, arrow_cy + dy);
 
-  /* If robot is moving, show a yellow bar */
   if (robot_moving) {
     SDL_Rect moving_bar = {win_w - 60, win_h - 18, 50, 12};
-    SDL_SetRenderDrawColor(r, 255, 190, 0, 255);  /* amber */
+    SDL_SetRenderDrawColor(r, 255, 190, 0, 255);
     SDL_RenderFillRect(r, &moving_bar);
   }
 }
@@ -268,6 +334,7 @@ static bool try_move(int* px,int* py,int dx,int dy){
   return true;
 }
 
+<<<<<<< HEAD
 static void regenerate(int* px,int* py,SDL_Window* win){
   maze_init();
   maze_generate(0,0);
@@ -287,11 +354,12 @@ static void regenerate(int* px,int* py,SDL_Window* win){
   robot_grid_y = 0;
 }
 
+=======
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 /* ================= Curl ================= */
 
 static CURL* g_curl=NULL;
 
-/* Suppress curl response body */
 static size_t write_devnull(void* p, size_t s, size_t n, void* u) {
   (void)p; (void)u;
   return s * n;
@@ -316,6 +384,24 @@ static void telemetry_shutdown(void){
   curl_global_cleanup();
 }
 
+static void post_json_to_url(const char *url, const char *json) {
+  if(!g_curl) return;
+
+  struct curl_slist* headers=NULL;
+  headers=curl_slist_append(headers,"Content-Type: application/json");
+
+  curl_easy_setopt(g_curl,CURLOPT_URL,url);
+  curl_easy_setopt(g_curl,CURLOPT_HTTPHEADER,headers);
+  curl_easy_setopt(g_curl,CURLOPT_POSTFIELDS,json);
+
+  CURLcode res = curl_easy_perform(g_curl);
+  if (res != CURLE_OK) {
+    fprintf(stderr, "[POST ERROR] %s -> %s\n", url, curl_easy_strerror(res));
+  }
+
+  curl_slist_free_all(headers);
+}
+
 /* Telemetry */
 static void telemetry_send(int px,int py,bool won){
   if(!g_curl) return;
@@ -328,15 +414,7 @@ static void telemetry_send(int px,int py,bool won){
     ",\"player\":{\"x\":%d,\"y\":%d},\"won\":%s}",
     DEVICE_ID,ts,px,py,won?"true":"false");
 
-  struct curl_slist* headers=NULL;
-  headers=curl_slist_append(headers,"Content-Type: application/json");
-
-  curl_easy_setopt(g_curl,CURLOPT_URL,TELEMETRY_URL);
-  curl_easy_setopt(g_curl,CURLOPT_HTTPHEADER,headers);
-  curl_easy_setopt(g_curl,CURLOPT_POSTFIELDS,json);
-
-  curl_easy_perform(g_curl);
-  curl_slist_free_all(headers);
+  post_json_to_url(TELEMETRY_URL, json);
 }
 
 /* Mission JSON */
@@ -376,28 +454,43 @@ static void ai_mission_send(const char* result,const char* abort_reason){
     moves_total,distance_traveled,duration,
     result,abort_reason);
 
-  struct curl_slist* headers=NULL;
-  headers=curl_slist_append(headers,"Content-Type: application/json");
+  post_json_to_url(AI_MISSION_URL, json);
+  post_json_to_url(LOCAL_MISSION_URL, json);
+}
 
-  curl_easy_setopt(g_curl,CURLOPT_URL,AI_MISSION_URL);
-  curl_easy_setopt(g_curl,CURLOPT_HTTPHEADER,headers);
-  curl_easy_setopt(g_curl,CURLOPT_POSTFIELDS,json);
+/* ================= Redis State Reporting ================= */
 
-  curl_easy_perform(g_curl);
-  curl_slist_free_all(headers);
+static void send_maze_definition(void) {
+    if (!g_curl || current_session_id[0] == '\0') return;
+    char* json = build_maze_json(current_session_id);
+    post_json_to_url(AI_MISSION_URL, json);
+}
 
-  /* Also send to local dashboard server */
-  headers = curl_slist_append(NULL, "Content-Type: application/json");
-  curl_easy_setopt(g_curl, CURLOPT_URL, LOCAL_MISSION_URL);
-  curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, json);
-  curl_easy_perform(g_curl);
-  curl_slist_free_all(headers);
+static void send_runtime_update(const char *event, const char *move, int x, int y) {
+    if (!g_curl || current_session_id[0] == '\0') return;
+
+    char json[512];
+    snprintf(json, sizeof(json),
+        "{"
+        "\"msg_type\":\"runtime_update\","
+        "\"session_id\":\"%s\","
+        "\"event\":\"%s\","
+        "\"move\":\"%s\","
+        "\"x\":%d,"
+        "\"y\":%d"
+        "}",
+        current_session_id,
+        event ? event : "",
+        move ? move : "",
+        x,
+        y
+    );
+
+    post_json_to_url(AI_MISSION_URL, json);
 }
 
 /* ================= Robot Control ================= */
 
-/* Send a single move command to the robot */
 static void robot_send_cmd(const char* move_dir) {
   if (!g_curl || !robot_enabled) return;
 
@@ -417,6 +510,7 @@ static void robot_send_cmd(const char* move_dir) {
   curl_slist_free_all(headers);
 }
 
+<<<<<<< HEAD
 /* Send a rotation command with a specific angular speed */
 static void robot_send_rotate(const char* direction, double angular_speed) {
   if (!g_curl || !robot_enabled) return;
@@ -449,6 +543,8 @@ static double get_rotation_speed(double angle_diff) {
 
 /* Calculate shortest rotation direction between two headings */
 /* Returns positive for clockwise, negative for counterclockwise */
+=======
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 static double heading_diff_d(double from, double to) {
   double diff = to - from;
   while (diff > 180.0) diff -= 360.0;
@@ -456,7 +552,6 @@ static double heading_diff_d(double from, double to) {
   return diff;
 }
 
-/* Buffer for overhead camera response */
 typedef struct {
   char data[1024];
   size_t size;
@@ -473,6 +568,7 @@ static size_t response_write(void* contents, size_t size, size_t nmemb, void* us
   return total;
 }
 
+<<<<<<< HEAD
 /* Fetch current robot odom (heading + position).
    Returns true if successful. */
 static bool robot_get_odom(double* out_yaw, double* out_x, double* out_y) {
@@ -650,6 +746,10 @@ static void robot_walk_one_cell(void) {
    Returns true if robot is visible and writes position/heading. */
 static bool overhead_get_robot(double* out_yaw, double* out_x, double* out_y) {
   if (!g_overhead_available) return false;
+=======
+static bool overhead_get_heading(double* out_yaw) {
+  if (!g_curl || !g_overhead_available) return false;
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
   ResponseBuf resp = { .size = 0 };
   resp.data[0] = '\0';
@@ -671,7 +771,10 @@ static bool overhead_get_robot(double* out_yaw, double* out_x, double* out_y) {
 
   if (res != CURLE_OK) return false;
 
+<<<<<<< HEAD
   /* Check visible */
+=======
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
   char* vis = strstr(resp.data, "\"visible\"");
   if (!vis) return false;
   if (!strstr(vis, "true")) return false;
@@ -700,6 +803,7 @@ static bool overhead_get_robot(double* out_yaw, double* out_x, double* out_y) {
   return true;
 }
 
+<<<<<<< HEAD
 /* Fetch robot self-localization from robot's camera (seeing reference cube).
    Returns true if localization is valid and writes relative position and heading. */
 static bool robot_get_self_localization(double* out_heading, double* out_dist, double* out_rel_x, double* out_rel_z) {
@@ -714,10 +818,18 @@ static bool robot_get_self_localization(double* out_heading, double* out_dist, d
   } else {
     return false;
   }
+=======
+static void robot_rotate_to(int target_heading) {
+  double current_yaw;
+
+  if (overhead_get_heading(&current_yaw)) {
+    Uint32 start_time = SDL_GetTicks();
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
   ResponseBuf resp = { .size = 0 };
   resp.data[0] = '\0';
 
+<<<<<<< HEAD
   CURL* loc_curl = curl_easy_init();
   if (!loc_curl) return false;
 
@@ -729,10 +841,24 @@ static bool robot_get_self_localization(double* out_heading, double* out_dist, d
   curl_easy_setopt(loc_curl, CURLOPT_SSL_VERIFYHOST, 0L);
   curl_easy_setopt(loc_curl, CURLOPT_WRITEFUNCTION, response_write);
   curl_easy_setopt(loc_curl, CURLOPT_WRITEDATA, &resp);
+=======
+      if (fabs(diff) < ROBOT_HEADING_TOLERANCE) {
+        robot_send_cmd("stop");
+        printf("[ROBOT] Reached heading %d (actual: %.1f)\n", target_heading, current_yaw);
+        return;
+      }
+
+      if (diff > 0) {
+        robot_send_cmd("right");
+      } else {
+        robot_send_cmd("left");
+      }
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
   CURLcode res = curl_easy_perform(loc_curl);
   curl_easy_cleanup(loc_curl);
 
+<<<<<<< HEAD
   if (res != CURLE_OK) return false;
 
   /* Check valid */
@@ -761,6 +887,14 @@ static bool robot_get_self_localization(double* out_heading, double* out_dist, d
     if (rx) {
       rx = strchr(rx, ':');
       if (rx && out_rel_x) *out_rel_x = strtod(rx + 1, NULL);
+=======
+      if (!overhead_get_heading(&current_yaw)) {
+        robot_send_cmd("stop");
+        printf("[ROBOT] Lost overhead camera during rotation\n");
+        SDL_Delay(200);
+        return;
+      }
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
     }
     char* rz = strstr(rp, "\"z\"");
     if (rz) {
@@ -769,6 +903,7 @@ static bool robot_get_self_localization(double* out_heading, double* out_dist, d
     }
   }
 
+<<<<<<< HEAD
   return true;
 }
 
@@ -821,15 +956,29 @@ static void robot_apply_correction(int expected_grid_x, int expected_grid_y, int
   double err_x = expected_x - actual_x;
   double err_y = expected_y - actual_y;
   double err_dist = sqrt(err_x * err_x + err_y * err_y);
+=======
+    robot_send_cmd("stop");
+    printf("[ROBOT] Rotation timeout (target: %d, actual: %.1f)\n", target_heading, current_yaw);
+    return;
+  }
+
+  printf("[ROBOT] No overhead camera - using fixed-time rotation\n");
+  int diff = (int)heading_diff_d((double)robot_heading, (double)target_heading);
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
   /* Calculate heading error */
   double heading_err = heading_diff_d(actual_yaw, (double)expected_heading);
 
+<<<<<<< HEAD
   printf("[CORRECT] Source: %s\n", source);
   printf("[CORRECT] Expected: (%.3f, %.3f) heading %d | Actual: (%.3f, %.3f) heading %.1f | Error: %.3fm, %.1fdeg\n",
          expected_x, expected_y, expected_heading,
          actual_x, actual_y, actual_yaw,
          err_dist, heading_err);
+=======
+  int abs_diff = abs(diff);
+  int rotate_ms = (abs_diff * 3000) / 90;
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
   /* Correct heading if off by more than tolerance */
   if (fabs(heading_err) > ROBOT_HEADING_TOLERANCE) {
@@ -878,6 +1027,7 @@ static void robot_apply_correction(int expected_grid_x, int expected_grid_y, int
   printf("[CORRECT] Correction complete\n");
 }
 
+<<<<<<< HEAD
 /* ================= Move Execution ================= */
 
 /* Execute a maze move: rotate to target heading, walk one cell, correct with camera.
@@ -888,10 +1038,16 @@ static void robot_execute_move(int target_heading) {
   robot_moving = true;
 
   /* Rotate to face the correct direction */
+=======
+static void robot_execute_move(int target_heading) {
+  if (!robot_enabled) return;
+
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
   if (robot_heading != target_heading) {
     robot_rotate_to(target_heading);
   }
 
+<<<<<<< HEAD
   /* Walk forward one cell */
   robot_walk_one_cell();
 
@@ -913,8 +1069,37 @@ static void robot_execute_move(int target_heading) {
 }
 
 /* Robot update is now a no-op since movement blocks until complete */
+=======
+  robot_send_cmd("forward");
+  robot_heading = target_heading;
+  robot_moving = true;
+  robot_unlock_time = SDL_GetTicks() + ROBOT_STEP_DURATION_MS;
+}
+
+>>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 static void robot_update(void) {
   /* Movement is handled synchronously in robot_execute_move */
+}
+
+/* ================= Regenerate ================= */
+
+static void regenerate(int* px,int* py,SDL_Window* win){
+  maze_init();
+  maze_generate(0,0);
+  *px=0; *py=0;
+  SDL_SetWindowTitle(win,"SDL2 Maze - Reach the green goal (R to regenerate)");
+
+  mission_start_time=time(NULL);
+  mission_active=true;
+  moves_left=moves_right=moves_straight=moves_reverse=0;
+  moves_total=0;
+  distance_traveled=0.0;
+
+  robot_heading = HEADING_NORTH;
+  robot_moving = false;
+
+  generate_session_id();
+  send_maze_definition();
 }
 
 /* ================= main ================= */
@@ -922,7 +1107,6 @@ static void robot_update(void) {
 int main(int argc, char* argv[]){
   srand((unsigned)time(NULL));
 
-  /* Get robot IP from argument or environment or default */
   const char* robot_ip = DEFAULT_ROBOT_IP;
   if (argc > 1) {
     robot_ip = argv[1];
@@ -932,7 +1116,6 @@ int main(int argc, char* argv[]){
   }
   snprintf(g_robot_url, sizeof(g_robot_url), "https://%s:%d/move", robot_ip, ROBOT_PORT);
 
-  /* Get overhead camera IP from second argument or environment */
   const char* overhead_ip = NULL;
   if (argc > 2) {
     overhead_ip = argv[2];
@@ -972,7 +1155,6 @@ int main(int argc, char* argv[]){
   bool running=true,won=false;
 
   while(running){
-    /* Update robot state (check if movement is done) */
     robot_update();
 
     SDL_Event e;
@@ -980,6 +1162,7 @@ int main(int argc, char* argv[]){
       if(e.type==SDL_QUIT){
         if(mission_active)
           ai_mission_send("aborted","window closed");
+        send_runtime_update("quit", "", px, py);
         if(robot_enabled) robot_send_cmd("stop");
         running=false;
       }
@@ -990,11 +1173,11 @@ int main(int argc, char* argv[]){
         if(k==SDLK_ESCAPE || k==SDLK_q){
           if(mission_active)
             ai_mission_send("aborted","user exited");
+          send_runtime_update("exit", "", px, py);
           if(robot_enabled) robot_send_cmd("stop");
           running=false;
         }
 
-        /* Toggle robot control */
         if(k==SDLK_p){
           robot_enabled = !robot_enabled;
           if(robot_enabled){
@@ -1008,38 +1191,39 @@ int main(int argc, char* argv[]){
 
         if(k==SDLK_r){
           if(robot_enabled) robot_send_cmd("stop");
+          send_runtime_update("regenerate", "", px, py);
           regenerate(&px,&py,win);
           won=false;
         }
 
-        /* Only allow movement if not won and robot isn't mid-move */
         if(!won && !robot_moving){
           bool moved=false;
           int target_heading = -1;
+          const char *move_name = NULL;
 
           if(k==SDLK_UP||k==SDLK_w){
             moved=try_move(&px,&py,0,-1);
-            if(moved){ moves_straight++; target_heading=HEADING_NORTH; }
+            if(moved){ moves_straight++; target_heading=HEADING_NORTH; move_name="UP"; }
           }
           if(k==SDLK_RIGHT||k==SDLK_d){
             moved=try_move(&px,&py,1,0);
-            if(moved){ moves_right++; target_heading=HEADING_EAST; }
+            if(moved){ moves_right++; target_heading=HEADING_EAST; move_name="RIGHT"; }
           }
           if(k==SDLK_DOWN||k==SDLK_s){
             moved=try_move(&px,&py,0,1);
-            if(moved){ moves_reverse++; target_heading=HEADING_SOUTH; }
+            if(moved){ moves_reverse++; target_heading=HEADING_SOUTH; move_name="DOWN"; }
           }
           if(k==SDLK_LEFT||k==SDLK_a){
             moved=try_move(&px,&py,-1,0);
-            if(moved){ moves_left++; target_heading=HEADING_WEST; }
+            if(moved){ moves_left++; target_heading=HEADING_WEST; move_name="LEFT"; }
           }
 
           if(moved){
             moves_total++;
             distance_traveled+=1.0;
             telemetry_send(px,py,won);
+            send_runtime_update("move", move_name, px, py);
 
-            /* Send movement to robot */
             if(robot_enabled && target_heading >= 0){
               robot_execute_move(target_heading);
             }
@@ -1051,6 +1235,7 @@ int main(int argc, char* argv[]){
               ai_mission_send("success","none");
               mission_active=false;
             }
+            send_runtime_update("goal", "", px, py);
             if(robot_enabled) robot_send_cmd("stop");
             SDL_SetWindowTitle(win,"You win! Press R to regenerate");
           }
@@ -1064,7 +1249,6 @@ int main(int argc, char* argv[]){
     SDL_RenderPresent(r);
   }
 
-  /* Stop robot before cleanup */
   if(robot_enabled) robot_send_cmd("stop");
 
   SDL_DestroyRenderer(r);

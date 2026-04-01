@@ -607,7 +607,7 @@ static void robot_rotate_to(int target_heading) {
       }
 
       double speed = get_rotation_speed(diff);
-      const char* direction = (diff > 0) ? "right" : "left";
+      const char* direction = (diff > 0) ? "left" : "right";
       robot_send_rotate(direction, speed);
 
       SDL_Delay(ROBOT_HEADING_POLL_MS);

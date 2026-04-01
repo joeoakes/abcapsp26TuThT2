@@ -31,7 +31,6 @@
 /* Robot control config */
 #define DEFAULT_ROBOT_IP "10.170.8.136"
 #define ROBOT_PORT 8444
-<<<<<<< HEAD
 #define ROBOT_CELL_SIZE_M 0.1016        /* 4 inches = 0.1016 meters per cell */
 #define ROBOT_MOVE_TIMEOUT_MS 8000      /* Max time for one forward step */
 #define ROBOT_ROTATE_TIMEOUT_MS 8000    /* Max time to wait for rotation */
@@ -40,14 +39,6 @@
 #define ROBOT_DISTANCE_TOLERANCE 0.02   /* Meters - close enough to target distance */
 
 /* Overhead camera correction config */
-=======
-#define ROBOT_STEP_DURATION_MS 3000
-#define ROBOT_ROTATE_TIMEOUT_MS 8000
-#define ROBOT_HEADING_TOLERANCE 15.0
-#define ROBOT_HEADING_POLL_MS 100
-
-/* Overhead camera config */
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 #define DEFAULT_OVERHEAD_IP "0.0.0.0"
 #define OVERHEAD_PORT 8090
 #define ROBOT_POSITION_CORRECTION_TOLERANCE 0.03  /* Meters - correct if off by more than this */
@@ -56,7 +47,6 @@ static char g_robot_url[256] = "";
 static char g_overhead_url[256] = "";
 static bool g_overhead_available = false;
 
-<<<<<<< HEAD
 /* Maze grid tracking - expected robot position in grid coordinates */
 static int robot_grid_x = 0;
 static int robot_grid_y = 0;
@@ -68,10 +58,9 @@ static int robot_grid_y = 0;
 #define REF_CUBE_TAG_IDS_E 1
 #define REF_CUBE_TAG_IDS_S 2
 #define REF_CUBE_TAG_IDS_W 3
-=======
+
 /* Session id for current maze */
 static char current_session_id[64] = "";
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
 /* for converting time to a more user-friendly format */
 static void format_time(time_t t, char *buf, size_t size) {
@@ -93,19 +82,12 @@ static bool mission_active = false;
 
 /* ================= Robot Control State ================= */
 
-<<<<<<< HEAD
 static bool robot_enabled = false;       /* Toggle with P key */
 static int robot_heading = 0;            /* 0=north, 90=east, 180=south, 270=west */
 static bool robot_moving = false;        /* Input locked while true */
 static bool robot_connected = false;     /* Last connection status */
-=======
-static bool robot_enabled = false;
-static int robot_heading = 0;
-static bool robot_moving = false;
-static Uint32 robot_unlock_time = 0;
-static bool robot_connected = false;
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
+/* Heading constants */
 #define HEADING_NORTH 0
 #define HEADING_EAST  90
 #define HEADING_SOUTH 180
@@ -279,6 +261,7 @@ static void draw_player_goal(SDL_Renderer* r,int px,int py) {
   SDL_RenderFillRect(r,&p);
 }
 
+/* Draw robot status indicator */
 static void draw_robot_status(SDL_Renderer* r, int win_w, int win_h) {
   if (!robot_enabled) return;
 
@@ -334,32 +317,11 @@ static bool try_move(int* px,int* py,int dx,int dy){
   return true;
 }
 
-<<<<<<< HEAD
-static void regenerate(int* px,int* py,SDL_Window* win){
-  maze_init();
-  maze_generate(0,0);
-  *px=0; *py=0;
-  SDL_SetWindowTitle(win,"SDL2 Maze - Reach the green goal (R to regenerate)");
-
-  mission_start_time=time(NULL);
-  mission_active=true;
-  moves_left=moves_right=moves_straight=moves_reverse=0;
-  moves_total=0;
-  distance_traveled=0.0;
-
-  /* Reset robot heading and grid position on new maze */
-  robot_heading = HEADING_SOUTH;
-  robot_moving = false;
-  robot_grid_x = 0;
-  robot_grid_y = 0;
-}
-
-=======
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 /* ================= Curl ================= */
 
 static CURL* g_curl=NULL;
 
+/* Suppress curl response body */
 static size_t write_devnull(void* p, size_t s, size_t n, void* u) {
   (void)p; (void)u;
   return s * n;
@@ -384,6 +346,7 @@ static void telemetry_shutdown(void){
   curl_global_cleanup();
 }
 
+/* Generic POST helper */
 static void post_json_to_url(const char *url, const char *json) {
   if(!g_curl) return;
 
@@ -426,7 +389,7 @@ static void ai_mission_send(const char* result,const char* abort_reason){
 
   char start_str[64];
   char end_str[64];
-  
+
   format_time(mission_start_time, start_str, sizeof(start_str));
   format_time(end_time, end_str, sizeof(end_str));
 
@@ -491,6 +454,7 @@ static void send_runtime_update(const char *event, const char *move, int x, int 
 
 /* ================= Robot Control ================= */
 
+/* Send a single move command to the robot */
 static void robot_send_cmd(const char* move_dir) {
   if (!g_curl || !robot_enabled) return;
 
@@ -510,7 +474,6 @@ static void robot_send_cmd(const char* move_dir) {
   curl_slist_free_all(headers);
 }
 
-<<<<<<< HEAD
 /* Send a rotation command with a specific angular speed */
 static void robot_send_rotate(const char* direction, double angular_speed) {
   if (!g_curl || !robot_enabled) return;
@@ -542,9 +505,6 @@ static double get_rotation_speed(double angle_diff) {
 }
 
 /* Calculate shortest rotation direction between two headings */
-/* Returns positive for clockwise, negative for counterclockwise */
-=======
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 static double heading_diff_d(double from, double to) {
   double diff = to - from;
   while (diff > 180.0) diff -= 360.0;
@@ -552,6 +512,7 @@ static double heading_diff_d(double from, double to) {
   return diff;
 }
 
+/* Buffer for HTTP responses */
 typedef struct {
   char data[1024];
   size_t size;
@@ -568,13 +529,11 @@ static size_t response_write(void* contents, size_t size, size_t nmemb, void* us
   return total;
 }
 
-<<<<<<< HEAD
 /* Fetch current robot odom (heading + position).
    Returns true if successful. */
 static bool robot_get_odom(double* out_yaw, double* out_x, double* out_y) {
   if (!g_curl) return false;
 
-  /* Build odom URL from robot URL: same host, /odom instead of /move */
   char odom_url[256];
   strncpy(odom_url, g_robot_url, sizeof(odom_url));
   char* last_slash = strrchr(odom_url, '/');
@@ -604,26 +563,22 @@ static bool robot_get_odom(double* out_yaw, double* out_x, double* out_y) {
 
   if (res != CURLE_OK) return false;
 
-  /* Check valid */
   char* vis = strstr(resp.data, "\"valid\"");
   if (!vis) return false;
   if (!strstr(vis, "true")) return false;
 
-  /* Parse yaw */
   char* yaw_str = strstr(resp.data, "\"yaw\"");
   if (!yaw_str) return false;
   yaw_str = strchr(yaw_str, ':');
   if (!yaw_str) return false;
   if (out_yaw) *out_yaw = strtod(yaw_str + 1, NULL);
 
-  /* Parse x */
   char* x_str = strstr(resp.data, "\"x\"");
   if (!x_str) return false;
   x_str = strchr(x_str, ':');
   if (!x_str) return false;
   if (out_x) *out_x = strtod(x_str + 1, NULL);
 
-  /* Parse y */
   char* y_str = strstr(resp.data, "\"y\"");
   if (!y_str) return false;
   y_str = strchr(y_str, ':');
@@ -638,14 +593,12 @@ static bool robot_get_odom(double* out_yaw, double* out_x, double* out_y) {
 static void robot_rotate_to(int target_heading) {
   double current_yaw, dummy_x, dummy_y;
 
-  /* Try odom-guided rotation with variable speed */
   if (robot_get_odom(&current_yaw, &dummy_x, &dummy_y)) {
     Uint32 start_time = SDL_GetTicks();
 
     while (SDL_GetTicks() - start_time < ROBOT_ROTATE_TIMEOUT_MS) {
       double diff = heading_diff_d(current_yaw, (double)target_heading);
 
-      /* Close enough? */
       if (fabs(diff) < ROBOT_HEADING_TOLERANCE) {
         robot_send_cmd("stop");
         printf("[ROBOT] Reached heading %d (actual: %.1f, error: %.1f)\n",
@@ -653,14 +606,12 @@ static void robot_rotate_to(int target_heading) {
         return;
       }
 
-      /* Variable speed based on how far off we are */
       double speed = get_rotation_speed(diff);
       const char* direction = (diff > 0) ? "right" : "left";
       robot_send_rotate(direction, speed);
 
       SDL_Delay(ROBOT_HEADING_POLL_MS);
 
-      /* Re-check heading */
       if (!robot_get_odom(&current_yaw, &dummy_x, &dummy_y)) {
         robot_send_cmd("stop");
         printf("[ROBOT] Lost odom during rotation\n");
@@ -669,13 +620,11 @@ static void robot_rotate_to(int target_heading) {
       }
     }
 
-    /* Timeout */
     robot_send_cmd("stop");
     printf("[ROBOT] Rotation timeout (target: %d, actual: %.1f)\n", target_heading, current_yaw);
     return;
   }
 
-  /* Fallback: fixed-time rotation (no odom available) */
   printf("[ROBOT] No odom available - using fixed-time rotation\n");
   int diff = (int)heading_diff_d((double)robot_heading, (double)target_heading);
 
@@ -700,7 +649,6 @@ static void robot_rotate_to(int target_heading) {
 static void robot_walk_one_cell(void) {
   double start_yaw, start_x, start_y;
 
-  /* Try distance-based movement */
   if (robot_get_odom(&start_yaw, &start_x, &start_y)) {
     Uint32 start_time = SDL_GetTicks();
 
@@ -727,13 +675,11 @@ static void robot_walk_one_cell(void) {
       }
     }
 
-    /* Timeout */
     robot_send_cmd("stop");
     printf("[ROBOT] Walk timeout\n");
     return;
   }
 
-  /* Fallback: time-based (no odom) */
   printf("[ROBOT] No odom - using time-based walk\n");
   robot_send_cmd("forward");
   SDL_Delay(1500);
@@ -742,14 +688,9 @@ static void robot_walk_one_cell(void) {
 
 /* ================= Position Correction ================= */
 
-/* Fetch robot position from overhead camera.
-   Returns true if robot is visible and writes position/heading. */
+/* Fetch robot position from overhead camera. */
 static bool overhead_get_robot(double* out_yaw, double* out_x, double* out_y) {
   if (!g_overhead_available) return false;
-=======
-static bool overhead_get_heading(double* out_yaw) {
-  if (!g_curl || !g_overhead_available) return false;
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
   ResponseBuf resp = { .size = 0 };
   resp.data[0] = '\0';
@@ -771,29 +712,22 @@ static bool overhead_get_heading(double* out_yaw) {
 
   if (res != CURLE_OK) return false;
 
-<<<<<<< HEAD
-  /* Check visible */
-=======
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
   char* vis = strstr(resp.data, "\"visible\"");
   if (!vis) return false;
   if (!strstr(vis, "true")) return false;
 
-  /* Parse yaw */
   char* yaw_str = strstr(resp.data, "\"yaw\"");
   if (yaw_str) {
     yaw_str = strchr(yaw_str, ':');
     if (yaw_str && out_yaw) *out_yaw = strtod(yaw_str + 1, NULL);
   }
 
-  /* Parse x */
   char* x_str = strstr(resp.data, "\"x\"");
   if (x_str) {
     x_str = strchr(x_str, ':');
     if (x_str && out_x) *out_x = strtod(x_str + 1, NULL);
   }
 
-  /* Parse y */
   char* y_str = strstr(resp.data, "\"y\"");
   if (y_str) {
     y_str = strchr(y_str, ':');
@@ -803,13 +737,10 @@ static bool overhead_get_heading(double* out_yaw) {
   return true;
 }
 
-<<<<<<< HEAD
-/* Fetch robot self-localization from robot's camera (seeing reference cube).
-   Returns true if localization is valid and writes relative position and heading. */
+/* Fetch robot self-localization from robot's camera (seeing reference cube). */
 static bool robot_get_self_localization(double* out_heading, double* out_dist, double* out_rel_x, double* out_rel_z) {
   if (!g_curl) return false;
 
-  /* Build localization URL from robot URL */
   char loc_url[256];
   strncpy(loc_url, g_robot_url, sizeof(loc_url));
   char* last_slash = strrchr(loc_url, '/');
@@ -818,18 +749,10 @@ static bool robot_get_self_localization(double* out_heading, double* out_dist, d
   } else {
     return false;
   }
-=======
-static void robot_rotate_to(int target_heading) {
-  double current_yaw;
-
-  if (overhead_get_heading(&current_yaw)) {
-    Uint32 start_time = SDL_GetTicks();
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
   ResponseBuf resp = { .size = 0 };
   resp.data[0] = '\0';
 
-<<<<<<< HEAD
   CURL* loc_curl = curl_easy_init();
   if (!loc_curl) return false;
 
@@ -841,60 +764,34 @@ static void robot_rotate_to(int target_heading) {
   curl_easy_setopt(loc_curl, CURLOPT_SSL_VERIFYHOST, 0L);
   curl_easy_setopt(loc_curl, CURLOPT_WRITEFUNCTION, response_write);
   curl_easy_setopt(loc_curl, CURLOPT_WRITEDATA, &resp);
-=======
-      if (fabs(diff) < ROBOT_HEADING_TOLERANCE) {
-        robot_send_cmd("stop");
-        printf("[ROBOT] Reached heading %d (actual: %.1f)\n", target_heading, current_yaw);
-        return;
-      }
-
-      if (diff > 0) {
-        robot_send_cmd("right");
-      } else {
-        robot_send_cmd("left");
-      }
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
   CURLcode res = curl_easy_perform(loc_curl);
   curl_easy_cleanup(loc_curl);
 
-<<<<<<< HEAD
   if (res != CURLE_OK) return false;
 
-  /* Check valid */
   char* vis = strstr(resp.data, "\"valid\"");
   if (!vis) return false;
   if (!strstr(vis, "true")) return false;
 
-  /* Parse robot_heading_from_cube */
   char* heading_str = strstr(resp.data, "\"robot_heading_from_cube\"");
   if (heading_str) {
     heading_str = strchr(heading_str, ':');
     if (heading_str && out_heading) *out_heading = strtod(heading_str + 1, NULL);
   }
 
-  /* Parse distance_to_cube */
   char* dist_str = strstr(resp.data, "\"distance_to_cube\"");
   if (dist_str) {
     dist_str = strchr(dist_str, ':');
     if (dist_str && out_dist) *out_dist = strtod(dist_str + 1, NULL);
   }
 
-  /* Parse robot_relative_position x and z */
   char* rp = strstr(resp.data, "\"robot_relative_position\"");
   if (rp) {
     char* rx = strstr(rp, "\"x\"");
     if (rx) {
       rx = strchr(rx, ':');
       if (rx && out_rel_x) *out_rel_x = strtod(rx + 1, NULL);
-=======
-      if (!overhead_get_heading(&current_yaw)) {
-        robot_send_cmd("stop");
-        printf("[ROBOT] Lost overhead camera during rotation\n");
-        SDL_Delay(200);
-        return;
-      }
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
     }
     char* rz = strstr(rp, "\"z\"");
     if (rz) {
@@ -903,12 +800,10 @@ static void robot_rotate_to(int target_heading) {
     }
   }
 
-<<<<<<< HEAD
   return true;
 }
 
-/* Calculate where the robot should be in meters relative to the reference cube.
-   Reference cube is at grid center (REF_CUBE_GRID_X, REF_CUBE_GRID_Y). */
+/* Calculate where the robot should be in meters relative to the reference cube. */
 static void grid_to_world(int grid_x, int grid_y, double* world_x, double* world_y) {
   *world_x = (grid_x - REF_CUBE_GRID_X) * ROBOT_CELL_SIZE_M;
   *world_y = (grid_y - REF_CUBE_GRID_Y) * ROBOT_CELL_SIZE_M;
@@ -921,7 +816,6 @@ static void robot_apply_correction(int expected_grid_x, int expected_grid_y, int
   bool have_correction = false;
   const char* source = "none";
 
-  /* Calculate expected world position */
   double expected_x, expected_y;
   grid_to_world(expected_grid_x, expected_grid_y, &expected_x, &expected_y);
 
@@ -935,10 +829,6 @@ static void robot_apply_correction(int expected_grid_x, int expected_grid_y, int
   if (!have_correction) {
     double loc_heading, loc_dist, loc_rel_x, loc_rel_z;
     if (robot_get_self_localization(&loc_heading, &loc_dist, &loc_rel_x, &loc_rel_z)) {
-      /* Robot's position relative to the cube center.
-         The reference cube is at (REF_CUBE_GRID_X, REF_CUBE_GRID_Y) in the grid,
-         which is (0, 0) in world coordinates. The localization gives us the
-         robot's position relative to the cube. */
       actual_x = loc_rel_x;
       actual_y = loc_rel_z;
       actual_yaw = loc_heading;
@@ -952,52 +842,30 @@ static void robot_apply_correction(int expected_grid_x, int expected_grid_y, int
     return;
   }
 
-  /* Calculate position error */
   double err_x = expected_x - actual_x;
   double err_y = expected_y - actual_y;
   double err_dist = sqrt(err_x * err_x + err_y * err_y);
-=======
-    robot_send_cmd("stop");
-    printf("[ROBOT] Rotation timeout (target: %d, actual: %.1f)\n", target_heading, current_yaw);
-    return;
-  }
-
-  printf("[ROBOT] No overhead camera - using fixed-time rotation\n");
-  int diff = (int)heading_diff_d((double)robot_heading, (double)target_heading);
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
-
-  /* Calculate heading error */
   double heading_err = heading_diff_d(actual_yaw, (double)expected_heading);
 
-<<<<<<< HEAD
   printf("[CORRECT] Source: %s\n", source);
   printf("[CORRECT] Expected: (%.3f, %.3f) heading %d | Actual: (%.3f, %.3f) heading %.1f | Error: %.3fm, %.1fdeg\n",
          expected_x, expected_y, expected_heading,
          actual_x, actual_y, actual_yaw,
          err_dist, heading_err);
-=======
-  int abs_diff = abs(diff);
-  int rotate_ms = (abs_diff * 3000) / 90;
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 
-  /* Correct heading if off by more than tolerance */
   if (fabs(heading_err) > ROBOT_HEADING_TOLERANCE) {
     printf("[CORRECT] Correcting heading by %.1f degrees\n", heading_err);
     robot_rotate_to(expected_heading);
   }
 
-  /* Correct position if off by more than tolerance */
   if (err_dist > ROBOT_POSITION_CORRECTION_TOLERANCE) {
     printf("[CORRECT] Correcting position by %.3fm\n", err_dist);
 
-    /* Calculate direction to correction point */
     double correction_heading_rad = atan2(err_x, -err_y);
     int correction_heading = (int)(fmod(360.0 + correction_heading_rad * 180.0 / M_PI, 360.0));
 
-    /* Rotate toward correction point */
     robot_rotate_to(correction_heading);
 
-    /* Walk the correction distance */
     double start_yaw, start_x, start_y;
     if (robot_get_odom(&start_yaw, &start_x, &start_y)) {
       robot_send_cmd("forward");
@@ -1020,41 +888,29 @@ static void robot_apply_correction(int expected_grid_x, int expected_grid_y, int
       robot_send_cmd("stop");
     }
 
-    /* Re-rotate to the expected heading after position correction */
     robot_rotate_to(expected_heading);
   }
 
   printf("[CORRECT] Correction complete\n");
 }
 
-<<<<<<< HEAD
 /* ================= Move Execution ================= */
 
-/* Execute a maze move: rotate to target heading, walk one cell, correct with camera.
+/* Execute a maze move: rotate to target heading, walk one cell, correct.
    Blocks until complete. */
 static void robot_execute_move(int target_heading) {
   if (!robot_enabled) return;
 
   robot_moving = true;
 
-  /* Rotate to face the correct direction */
-=======
-static void robot_execute_move(int target_heading) {
-  if (!robot_enabled) return;
-
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
   if (robot_heading != target_heading) {
     robot_rotate_to(target_heading);
   }
 
-<<<<<<< HEAD
-  /* Walk forward one cell */
   robot_walk_one_cell();
 
-  /* Update heading and grid position */
   robot_heading = target_heading;
 
-  /* Update expected grid position based on direction moved */
   switch (target_heading) {
     case HEADING_NORTH: robot_grid_y--; break;
     case HEADING_EAST:  robot_grid_x++; break;
@@ -1062,21 +918,12 @@ static void robot_execute_move(int target_heading) {
     case HEADING_WEST:  robot_grid_x--; break;
   }
 
-  /* Apply overhead camera correction if available */
   robot_apply_correction(robot_grid_x, robot_grid_y, target_heading);
 
   robot_moving = false;
 }
 
 /* Robot update is now a no-op since movement blocks until complete */
-=======
-  robot_send_cmd("forward");
-  robot_heading = target_heading;
-  robot_moving = true;
-  robot_unlock_time = SDL_GetTicks() + ROBOT_STEP_DURATION_MS;
-}
-
->>>>>>> 1a2a12c (Changes to maze app and mongo backend, added A* python file)
 static void robot_update(void) {
   /* Movement is handled synchronously in robot_execute_move */
 }
@@ -1095,9 +942,13 @@ static void regenerate(int* px,int* py,SDL_Window* win){
   moves_total=0;
   distance_traveled=0.0;
 
-  robot_heading = HEADING_NORTH;
+  /* Reset robot heading and grid position on new maze */
+  robot_heading = HEADING_SOUTH;
   robot_moving = false;
+  robot_grid_x = 0;
+  robot_grid_y = 0;
 
+  /* Session tracking */
   generate_session_id();
   send_maze_definition();
 }
@@ -1107,6 +958,7 @@ static void regenerate(int* px,int* py,SDL_Window* win){
 int main(int argc, char* argv[]){
   srand((unsigned)time(NULL));
 
+  /* Get robot IP from argument or environment or default */
   const char* robot_ip = DEFAULT_ROBOT_IP;
   if (argc > 1) {
     robot_ip = argv[1];
@@ -1116,6 +968,7 @@ int main(int argc, char* argv[]){
   }
   snprintf(g_robot_url, sizeof(g_robot_url), "https://%s:%d/move", robot_ip, ROBOT_PORT);
 
+  /* Get overhead camera IP from second argument or environment */
   const char* overhead_ip = NULL;
   if (argc > 2) {
     overhead_ip = argv[2];
@@ -1178,11 +1031,12 @@ int main(int argc, char* argv[]){
           running=false;
         }
 
+        /* Toggle robot control */
         if(k==SDLK_p){
           robot_enabled = !robot_enabled;
           if(robot_enabled){
             printf("[MAZE] Robot control ENABLED\n");
-            robot_heading = HEADING_NORTH;
+            robot_heading = HEADING_SOUTH;
           } else {
             printf("[MAZE] Robot control DISABLED\n");
             robot_send_cmd("stop");
@@ -1196,6 +1050,7 @@ int main(int argc, char* argv[]){
           won=false;
         }
 
+        /* Only allow movement if not won and robot isn't mid-move */
         if(!won && !robot_moving){
           bool moved=false;
           int target_heading = -1;
@@ -1224,6 +1079,7 @@ int main(int argc, char* argv[]){
             telemetry_send(px,py,won);
             send_runtime_update("move", move_name, px, py);
 
+            /* Send movement to robot */
             if(robot_enabled && target_heading >= 0){
               robot_execute_move(target_heading);
             }
@@ -1249,6 +1105,7 @@ int main(int argc, char* argv[]){
     SDL_RenderPresent(r);
   }
 
+  /* Stop robot before cleanup */
   if(robot_enabled) robot_send_cmd("stop");
 
   SDL_DestroyRenderer(r);

@@ -225,7 +225,7 @@ int main(void) {
 
   const char* mongo_uri = getenv_or("MONGO_URI", "mongodb://localhost:27017");
   const char* dbname    = getenv_or("MONGO_DB",  "maze");
-  const char* colname   = getenv_or("MONGO_COL", "team2fmoves");
+  const char* colname   = getenv_or("MONGO_COL", "team2ttmoves");
 
   // HTTPS default port
   const char* port_s = getenv_or("LISTEN_PORT", "8444");

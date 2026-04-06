@@ -1,3 +1,5 @@
+
+
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -11,7 +13,12 @@ from tools_maze import (
     session_key,
 )
 
+# ollama
+import requests
+import json
 
+OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "llama3"
 # =========================
 # 4.1 SHARED STATE
 # =========================
@@ -97,11 +104,48 @@ def executor_node(state: MazeState, r, session_id) -> MazeState:
 
 
 # =========================
-# (OPTIONAL) LLM STUB
+# ollama implementation
 # =========================
 def call_llm_for_plan(state: MazeState) -> List[str]:
-    # Placeholder — you can ignore for now
-    return []
+    prompt = f"""
+You are solving a maze.
+
+Start: {state.current_pos}
+Goal: {state.goal}
+
+Return ONLY a JSON list of moves.
+Valid moves: ["UP","DOWN","LEFT","RIGHT"]
+
+Example:
+["RIGHT","RIGHT","DOWN"]
+"""
+
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=10
+        )
+
+        text = response.json().get("response", "").strip()
+
+        # Extract JSON safely
+        start = text.find("[")
+        end = text.rfind("]")
+
+        if start == -1 or end == -1:
+            return []
+
+        plan = json.loads(text[start:end+1])
+        return [m.upper() for m in plan]
+
+    except Exception as e:
+        print("Ollama error:", e)
+        return []
 
 
 # =========================

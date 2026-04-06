@@ -93,6 +93,16 @@ static bool robot_connected = false;     /* Last connection status */
 #define HEADING_SOUTH 180
 #define HEADING_WEST  270
 
+/* ================= Auto-Solve State ================= */
+
+#define AUTO_SOLVE_MAX_MOVES (MAZE_W * MAZE_H * 2)
+
+static int  auto_solve_headings[AUTO_SOLVE_MAX_MOVES];   /* HEADING_* per step */
+static const char* auto_solve_names[AUTO_SOLVE_MAX_MOVES]; /* "UP","RIGHT","DOWN","LEFT" */
+static int  auto_solve_len   = 0;
+static int  auto_solve_index = 0;
+static bool g_auto_solving   = false;
+
 /* ================= Maze Data ================= */
 
 enum { WALL_N = 1, WALL_E = 2, WALL_S = 4, WALL_W = 8 };
@@ -296,6 +306,13 @@ static void draw_robot_status(SDL_Renderer* r, int win_w, int win_h) {
     SDL_Rect moving_bar = {win_w - 60, win_h - 18, 50, 12};
     SDL_SetRenderDrawColor(r, 255, 190, 0, 255);
     SDL_RenderFillRect(r, &moving_bar);
+  }
+
+  /* Auto-solve indicator */
+  if (g_auto_solving) {
+    SDL_Rect auto_bar = {win_w - 120, win_h - 18, 55, 12};
+    SDL_SetRenderDrawColor(r, 0, 180, 255, 255);
+    SDL_RenderFillRect(r, &auto_bar);
   }
 }
 
@@ -511,7 +528,13 @@ static double heading_diff_d(double from, double to) {
   while (diff < -180.0) diff += 360.0;
   return diff;
 }
+/* Odom yaw (ROS: 0° at startup = SOUTH, increases CCW, range [-180,180])
+   to maze heading (0=N, 90=E, 180=S, 270=W, increases CW). */
+static const double g_odom_yaw_offset = 180.0;
 
+static double odom_to_maze_yaw(double odom_yaw) {
+  return fmod(g_odom_yaw_offset - odom_yaw + 360.0, 360.0);
+}
 /* Buffer for HTTP responses */
 typedef struct {
   char data[1024];
@@ -597,17 +620,16 @@ static void robot_rotate_to(int target_heading) {
     Uint32 start_time = SDL_GetTicks();
 
     while (SDL_GetTicks() - start_time < ROBOT_ROTATE_TIMEOUT_MS) {
-      double diff = heading_diff_d(current_yaw, (double)target_heading);
-
+      double diff = heading_diff_d(odom_to_maze_yaw(current_yaw), (double)target_heading);
       if (fabs(diff) < ROBOT_HEADING_TOLERANCE) {
         robot_send_cmd("stop");
-        printf("[ROBOT] Reached heading %d (actual: %.1f, error: %.1f)\n",
-               target_heading, current_yaw, diff);
+        printf("[ROBOT] Reached heading %d (odom: %.1f, maze: %.1f, error: %.1f)\n",
+               target_heading, current_yaw, odom_to_maze_yaw(current_yaw), diff);
         return;
       }
 
       double speed = get_rotation_speed(diff);
-      const char* direction = (diff > 0) ? "left" : "right";
+      const char* direction = (diff > 0) ? "right" : "left";
       robot_send_rotate(direction, speed);
 
       SDL_Delay(ROBOT_HEADING_POLL_MS);
@@ -631,7 +653,7 @@ static void robot_rotate_to(int target_heading) {
   if (diff == 0) return;
 
   int abs_diff = abs(diff);
-  int rotate_ms = (abs_diff * 3000) / 90;
+  int rotate_ms = (abs_diff * 1500) / 90;
 
   if (diff > 0) {
     robot_send_cmd("right");
@@ -682,7 +704,7 @@ static void robot_walk_one_cell(void) {
 
   printf("[ROBOT] No odom - using time-based walk\n");
   robot_send_cmd("forward");
-  SDL_Delay(1500);
+  SDL_Delay(800);
   robot_send_cmd("stop");
 }
 
@@ -894,6 +916,115 @@ static void robot_apply_correction(int expected_grid_x, int expected_grid_y, int
   printf("[CORRECT] Correction complete\n");
 }
 
+/* ================= A* Pathfinding ================= */
+
+/* Direction indices: 0=UP(N) 1=RIGHT(E) 2=DOWN(S) 3=LEFT(W) */
+static const int ASTAR_DX[4]      = { 0,  1,  0, -1 };
+static const int ASTAR_DY[4]      = {-1,  0,  1,  0 };
+static const int ASTAR_WALL[4]    = { WALL_N, WALL_E, WALL_S, WALL_W };
+static const int ASTAR_HEADING[4] = { HEADING_NORTH, HEADING_EAST, HEADING_SOUTH, HEADING_WEST };
+static const char* ASTAR_NAMES[4] = { "UP", "RIGHT", "DOWN", "LEFT" };
+
+/* Min-heap node */
+typedef struct { int x, y, f; } AStarHeapItem;
+static AStarHeapItem astar_heap[MAZE_W * MAZE_H];
+static int           astar_heap_sz = 0;
+
+static void astar_heap_push(int x, int y, int f) {
+  int i = astar_heap_sz++;
+  astar_heap[i] = (AStarHeapItem){x, y, f};
+  while (i > 0) {
+    int p = (i - 1) / 2;
+    if (astar_heap[p].f > astar_heap[i].f) {
+      AStarHeapItem tmp = astar_heap[p]; astar_heap[p] = astar_heap[i]; astar_heap[i] = tmp;
+      i = p;
+    } else break;
+  }
+}
+
+static AStarHeapItem astar_heap_pop(void) {
+  AStarHeapItem top = astar_heap[0];
+  astar_heap[0] = astar_heap[--astar_heap_sz];
+  int i = 0;
+  for (;;) {
+    int l = 2*i+1, r = 2*i+2, s = i;
+    if (l < astar_heap_sz && astar_heap[l].f < astar_heap[s].f) s = l;
+    if (r < astar_heap_sz && astar_heap[r].f < astar_heap[s].f) s = r;
+    if (s == i) break;
+    AStarHeapItem tmp = astar_heap[i]; astar_heap[i] = astar_heap[s]; astar_heap[s] = tmp;
+    i = s;
+  }
+  return top;
+}
+
+/* Run A* on the current maze from (sx,sy) to (gx,gy).
+   Fills auto_solve_headings[] / auto_solve_names[] / auto_solve_len.
+   Returns true if a path was found. */
+static bool astar_solve(int sx, int sy, int gx, int gy) {
+  static int  g_score [MAZE_H][MAZE_W];
+  static int  came_dir[MAZE_H][MAZE_W];   /* direction index used to reach cell */
+  static int  came_px [MAZE_H][MAZE_W];
+  static int  came_py [MAZE_H][MAZE_W];
+  static bool closed  [MAZE_H][MAZE_W];
+
+  for (int y = 0; y < MAZE_H; y++)
+    for (int x = 0; x < MAZE_W; x++) {
+      g_score[y][x]  = 999999;
+      came_dir[y][x] = -1;
+      closed[y][x]   = false;
+    }
+
+  astar_heap_sz = 0;
+  g_score[sy][sx] = 0;
+  astar_heap_push(sx, sy, abs(gx-sx) + abs(gy-sy));
+
+  while (astar_heap_sz > 0) {
+    AStarHeapItem cur = astar_heap_pop();
+    int cx = cur.x, cy = cur.y;
+
+    if (closed[cy][cx]) continue;
+    closed[cy][cx] = true;
+
+    if (cx == gx && cy == gy) {
+      /* Reconstruct path in reverse, then flip */
+      int tmp_dirs[AUTO_SOLVE_MAX_MOVES];
+      int len = 0;
+      int rx = cx, ry = cy;
+      while (!(rx == sx && ry == sy)) {
+        int d  = came_dir[ry][rx];
+        tmp_dirs[len++] = d;
+        int px = came_px[ry][rx];
+        int py = came_py[ry][rx];
+        rx = px; ry = py;
+      }
+      auto_solve_len = len;
+      for (int i = 0; i < len; i++) {
+        int d = tmp_dirs[len - 1 - i];
+        auto_solve_headings[i] = ASTAR_HEADING[d];
+        auto_solve_names[i]    = ASTAR_NAMES[d];
+      }
+      return true;
+    }
+
+    int cg = g_score[cy][cx];
+    for (int d = 0; d < 4; d++) {
+      if (g[cy][cx].walls & ASTAR_WALL[d]) continue;
+      int nx = cx + ASTAR_DX[d];
+      int ny = cy + ASTAR_DY[d];
+      if (!in_bounds(nx, ny) || closed[ny][nx]) continue;
+      int ng = cg + 1;
+      if (ng < g_score[ny][nx]) {
+        g_score[ny][nx]  = ng;
+        came_dir[ny][nx] = d;
+        came_px [ny][nx] = cx;
+        came_py [ny][nx] = cy;
+        astar_heap_push(nx, ny, ng + abs(gx-nx) + abs(gy-ny));
+      }
+    }
+  }
+  return false; /* no path */
+}
+
 /* ================= Move Execution ================= */
 
 /* Execute a maze move: rotate to target heading, walk one cell, correct.
@@ -948,6 +1079,11 @@ static void regenerate(int* px,int* py,SDL_Window* win){
   robot_grid_x = 0;
   robot_grid_y = 0;
 
+  /* Reset auto-solve */
+  g_auto_solving   = false;
+  auto_solve_len   = 0;
+  auto_solve_index = 0;
+
   /* Session tracking */
   generate_session_id();
   send_maze_definition();
@@ -987,6 +1123,7 @@ int main(int argc, char* argv[]){
   printf("[MAZE] Robot URL: %s\n", g_robot_url);
   printf("[MAZE] Robot odom: https://%s:%d/odom\n", robot_ip, ROBOT_PORT);
   printf("[MAZE] Press P to toggle robot control (currently OFF)\n");
+  printf("[MAZE] Press SPACE to toggle A* auto-solve\n");
 
   if(SDL_Init(SDL_INIT_VIDEO)!=0) return 1;
   telemetry_init();
@@ -995,7 +1132,7 @@ int main(int argc, char* argv[]){
   int win_h=PAD*2+MAZE_H*CELL;
 
   SDL_Window* win=SDL_CreateWindow(
-    "SDL2 Maze - Reach the green goal (R to regenerate, P for robot)",
+    "SDL2 Maze - Reach the green goal (R=regen, P=robot, SPACE=auto-solve)",
     SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
     win_w,win_h,SDL_WINDOW_SHOWN);
 
@@ -1009,6 +1146,61 @@ int main(int argc, char* argv[]){
 
   while(running){
     robot_update();
+
+    /* ── Auto-solve tick ───────────────────────────────────────────────
+       Fires one A* move per loop iteration while the robot (or player)
+       is free.  Goes through the same pipeline as manual keypresses so
+       telemetry, runtime_update events, and robot execution are identical. */
+    if (g_auto_solving && !won && !robot_moving) {
+      if (auto_solve_index >= auto_solve_len) {
+        g_auto_solving = false;
+        printf("[AUTO] Plan exhausted\n");
+      } else {
+        int th = auto_solve_headings[auto_solve_index];
+        const char *mn = auto_solve_names[auto_solve_index];
+
+        int mdx = 0, mdy = 0;
+        switch (th) {
+          case HEADING_NORTH: mdy = -1; break;
+          case HEADING_EAST:  mdx =  1; break;
+          case HEADING_SOUTH: mdy =  1; break;
+          case HEADING_WEST:  mdx = -1; break;
+        }
+
+        if (try_move(&px, &py, mdx, mdy)) {
+          switch (th) {
+            case HEADING_NORTH: moves_straight++; break;
+            case HEADING_EAST:  moves_right++;    break;
+            case HEADING_SOUTH: moves_reverse++;  break;
+            case HEADING_WEST:  moves_left++;     break;
+          }
+          moves_total++;
+          distance_traveled += 1.0;
+          telemetry_send(px, py, false);
+          send_runtime_update("move", mn, px, py);
+
+          if (robot_enabled && th >= 0)
+            robot_execute_move(th);
+
+          auto_solve_index++;
+
+          if (px == MAZE_W-1 && py == MAZE_H-1) {
+            won = true;
+            g_auto_solving = false;
+            if (mission_active) {
+              ai_mission_send("success", "none");
+              mission_active = false;
+            }
+            send_runtime_update("goal", "", px, py);
+            if (robot_enabled) robot_send_cmd("stop");
+            SDL_SetWindowTitle(win, "Auto-solved! Press R to regenerate");
+          }
+        } else {
+          printf("[AUTO] Move blocked at (%d,%d) — aborting auto-solve\n", px, py);
+          g_auto_solving = false;
+        }
+      }
+    }
 
     SDL_Event e;
     while(SDL_PollEvent(&e)){
@@ -1043,6 +1235,27 @@ int main(int argc, char* argv[]){
           }
         }
 
+        /* Toggle A* auto-solve */
+        if(k==SDLK_SPACE && !won){
+          if(g_auto_solving){
+            g_auto_solving = false;
+            printf("[AUTO] Auto-solve cancelled\n");
+            send_runtime_update("auto_cancel", "", px, py);
+            if(robot_enabled) robot_send_cmd("stop");
+          } else if(!robot_moving){
+            printf("[AUTO] Computing A* from (%d,%d) to (%d,%d)...\n",
+                   px, py, MAZE_W-1, MAZE_H-1);
+            if(astar_solve(px, py, MAZE_W-1, MAZE_H-1)){
+              printf("[AUTO] Path found: %d moves\n", auto_solve_len);
+              auto_solve_index = 0;
+              g_auto_solving   = true;
+              send_runtime_update("auto_start", "", px, py);
+            } else {
+              printf("[AUTO] No path found!\n");
+            }
+          }
+        }
+
         if(k==SDLK_r){
           if(robot_enabled) robot_send_cmd("stop");
           send_runtime_update("regenerate", "", px, py);
@@ -1051,7 +1264,7 @@ int main(int argc, char* argv[]){
         }
 
         /* Only allow movement if not won and robot isn't mid-move */
-        if(!won && !robot_moving){
+        if(!won && !robot_moving && !g_auto_solving){
           bool moved=false;
           int target_heading = -1;
           const char *move_name = NULL;

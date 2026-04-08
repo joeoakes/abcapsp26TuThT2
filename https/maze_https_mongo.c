@@ -225,21 +225,29 @@ int main(void) {
 
   const char* mongo_uri = getenv_or("MONGO_URI", "mongodb://localhost:27017");
   const char* dbname    = getenv_or("MONGO_DB",  "maze");
-  const char* colname   = getenv_or("MONGO_COL", "team2ttmoves");
+  const char* colname   = getenv_or("MONGO_COL", "team2fmoves");
 
   // HTTPS default port
   const char* port_s = getenv_or("LISTEN_PORT", "8444");
   int port = atoi(port_s);
   if (port <= 0 || port > 65535) port = 8444;
 
-  // TLS files
-  const char* crt_path = getenv_or("TLS_CERT", "certs/server.crt");
-  const char* key_path = getenv_or("TLS_KEY",  "certs/server.key");
+  // TLS files — paths are relative to the repo https/certs/ directory.
+  // Override with env vars if running from a different working directory.
+  const char* ca_path  = getenv_or("TLS_CA",   "certs/ca.crt");
+  const char* crt_path = getenv_or("TLS_CERT", "certs/logger-server.crt");
+  const char* key_path = getenv_or("TLS_KEY",  "certs/logger-server.key");
 
+  char* ca_pem         = read_file(ca_path);
   char* server_crt_pem = read_file(crt_path);
   char* server_key_pem = read_file(key_path);
-  if (!server_crt_pem || !server_key_pem) {
-    fprintf(stderr, "Failed to read TLS files. TLS_CERT=%s TLS_KEY=%s\n", crt_path, key_path);
+  if (!ca_pem || !server_crt_pem || !server_key_pem) {
+    fprintf(stderr, "Failed to read TLS files.\n");
+    fprintf(stderr, "  TLS_CA   = %s%s\n", ca_path,  ca_pem  ? " (ok)" : " *** NOT FOUND ***");
+    fprintf(stderr, "  TLS_CERT = %s%s\n", crt_path, server_crt_pem ? " (ok)" : " *** NOT FOUND ***");
+    fprintf(stderr, "  TLS_KEY  = %s%s\n", key_path, server_key_pem ? " (ok)" : " *** NOT FOUND ***");
+    fprintf(stderr, "Run generate_certs.sh then copy ca.crt + logger-server.{crt,key} here.\n");
+    free(ca_pem);
     free(server_crt_pem);
     free(server_key_pem);
     return 1;
@@ -284,8 +292,10 @@ int main(void) {
       (uint16_t)port,
       NULL, NULL,
       &request_handler, &mctx,
-      MHD_OPTION_HTTPS_MEM_KEY,  server_key_pem,
-      MHD_OPTION_HTTPS_MEM_CERT, server_crt_pem,
+      MHD_OPTION_HTTPS_MEM_KEY,        server_key_pem,
+      MHD_OPTION_HTTPS_MEM_CERT,       server_crt_pem,
+      /* mTLS — require clients to present a cert signed by our CA */
+      MHD_OPTION_HTTPS_MEM_TRUST_CERT, ca_pem,
       MHD_OPTION_CONNECTION_TIMEOUT, (unsigned int)10,
       MHD_OPTION_END);
 
@@ -300,6 +310,7 @@ int main(void) {
   }
 
   printf("Listening on https://0.0.0.0:%d\n", port);
+  printf("mTLS: client certificates REQUIRED (CA: %s)\n", ca_path);
   printf("Database backend: MongoDB\n");
   printf("MongoDB URI: %s\n", mongo_uri);
   printf("Database name: %s\n", dbname);
@@ -317,6 +328,7 @@ int main(void) {
 
   mongoc_collection_destroy(col);
   mongoc_client_destroy(client);
+  free(ca_pem);
   free(server_crt_pem);
   free(server_key_pem);
   mongoc_cleanup();

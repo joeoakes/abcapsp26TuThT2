@@ -14,8 +14,9 @@
 
 #define DEFAULT_PORT 8444
 
-static const char *cert_file = "certs/server.crt";
-static const char *key_file  = "certs/server.key";
+static const char *ca_file   = "certs/ca.crt";
+static const char *cert_file = "certs/ai-server.crt";
+static const char *key_file  = "certs/ai-server.key";
 
 static redisContext *redis;
 
@@ -396,11 +397,17 @@ int main(void) {
         return 1;
     }
 
+    char *ca_pem   = read_file(ca_file);
     char *cert_pem = read_file(cert_file);
     char *key_pem  = read_file(key_file);
 
-    if (!cert_pem || !key_pem) {
-        fprintf(stderr, "Failed to read cert/key files\n");
+    if (!ca_pem || !cert_pem || !key_pem) {
+        fprintf(stderr, "Failed to read TLS files.\n");
+        fprintf(stderr, "  ca.crt  : %s%s\n", ca_file,   ca_pem   ? " (ok)" : " *** NOT FOUND ***");
+        fprintf(stderr, "  cert    : %s%s\n", cert_file, cert_pem ? " (ok)" : " *** NOT FOUND ***");
+        fprintf(stderr, "  key     : %s%s\n", key_file,  key_pem  ? " (ok)" : " *** NOT FOUND ***");
+        fprintf(stderr, "Run generate_certs.sh then copy ca.crt + ai-server.{crt,key} here.\n");
+        free(ca_pem);
         free(cert_pem);
         free(key_pem);
         redisFree(redis);
@@ -412,13 +419,16 @@ int main(void) {
         DEFAULT_PORT,
         NULL, NULL,
         &handle_post, NULL,
-        MHD_OPTION_HTTPS_MEM_CERT, cert_pem,
-        MHD_OPTION_HTTPS_MEM_KEY,  key_pem,
+        MHD_OPTION_HTTPS_MEM_CERT,       cert_pem,
+        MHD_OPTION_HTTPS_MEM_KEY,        key_pem,
+        /* mTLS — require clients to present a cert signed by our CA */
+        MHD_OPTION_HTTPS_MEM_TRUST_CERT, ca_pem,
         MHD_OPTION_END
     );
 
     if (!daemon) {
         fprintf(stderr, "Failed to start HTTPS server\n");
+        free(ca_pem);
         free(cert_pem);
         free(key_pem);
         redisFree(redis);
@@ -427,6 +437,7 @@ int main(void) {
 
     printf("========================================\n");
     printf("Database backend: Redis\n");
+    printf("mTLS: client certificates REQUIRED\n");
     printf("Redis host: localhost\n");
     printf("Redis port: 6379\n");
     printf("Namespace: team2ffmaze\n");
@@ -440,6 +451,7 @@ int main(void) {
     getchar();
 
     MHD_stop_daemon(daemon);
+    free(ca_pem);
     free(cert_pem);
     free(key_pem);
     redisFree(redis);

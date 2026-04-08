@@ -1,6 +1,6 @@
 // maze_sdl2.c
 // SDL2 maze + HTTPS telemetry + full mission JSON reporting + robot control
-// DEV ONLY: disables TLS certificate + hostname verification.
+// mTLS client: presents gamehat.crt signed by project CA on every outbound call.
 // Press P to toggle Mini-Pupper robot control on/off.
 
 #include <SDL2/SDL.h>
@@ -27,6 +27,20 @@
 #define AI_MISSION_URL "https://10.170.8.109:8444/mission_end"
 #define LOCAL_MISSION_URL "http://localhost:8080/mission_end"
 #define DEVICE_ID "mini-pupper-01"
+
+/*
+ * mTLS cert paths for the Game HAT (client side).
+ * Override any of these with env vars if your working directory differs:
+ *   TLS_CA   — path to the shared CA cert (ca.crt)
+ *   TLS_CERT — path to the Game HAT client cert (gamehat.crt)
+ *   TLS_KEY  — path to the Game HAT client key  (gamehat.key)
+ *
+ * Default paths assume you run from the repo root:
+ *   ~/abcapsp26TuThT2/
+ */
+#define DEFAULT_CA_PATH   "https/certs/ca.crt"
+#define DEFAULT_CERT_PATH "https/certs/gamehat.crt"
+#define DEFAULT_KEY_PATH  "https/certs/gamehat.key"
 
 /* Robot control config */
 #define DEFAULT_ROBOT_IP "10.170.8.136"
@@ -349,12 +363,33 @@ static int telemetry_init(void){
   g_curl=curl_easy_init();
   if(!g_curl) return 0;
 
-  curl_easy_setopt(g_curl,CURLOPT_POST,1L);
-  curl_easy_setopt(g_curl,CURLOPT_SSL_VERIFYPEER,0L);
-  curl_easy_setopt(g_curl,CURLOPT_SSL_VERIFYHOST,0L);
-  curl_easy_setopt(g_curl,CURLOPT_TIMEOUT,2L);
-  curl_easy_setopt(g_curl,CURLOPT_CONNECTTIMEOUT,1L);
-  curl_easy_setopt(g_curl,CURLOPT_WRITEFUNCTION,write_devnull);
+  /* Resolve cert paths — env vars override defaults */
+  const char* ca_path   = getenv("TLS_CA");   if (!ca_path)   ca_path   = DEFAULT_CA_PATH;
+  const char* cert_path = getenv("TLS_CERT"); if (!cert_path) cert_path = DEFAULT_CERT_PATH;
+  const char* key_path  = getenv("TLS_KEY");  if (!key_path)  key_path  = DEFAULT_KEY_PATH;
+
+  /* mTLS client identity — Game HAT presents gamehat.crt on every request.
+   * The server (pupper, logger, AI) will reject the connection if this cert
+   * is not signed by the shared project CA (ca.crt). */
+  curl_easy_setopt(g_curl, CURLOPT_SSLCERT,      cert_path);
+  curl_easy_setopt(g_curl, CURLOPT_SSLKEY,        key_path);
+
+  /* Server verification — re-enabled; validates server cert against our CA.
+   * CURLOPT_SSL_VERIFYHOST 2L = check that the cert CN/SAN matches hostname. */
+  curl_easy_setopt(g_curl, CURLOPT_CAINFO,        ca_path);
+  curl_easy_setopt(g_curl, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(g_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
+  curl_easy_setopt(g_curl, CURLOPT_POST,           1L);
+  curl_easy_setopt(g_curl, CURLOPT_TIMEOUT,        2L);
+  curl_easy_setopt(g_curl, CURLOPT_CONNECTTIMEOUT, 1L);
+  curl_easy_setopt(g_curl, CURLOPT_WRITEFUNCTION,  write_devnull);
+
+  /* Confirm cert paths at startup so missing files are caught early */
+  printf("[mTLS] CA cert  : %s\n", ca_path);
+  printf("[mTLS] Client cert: %s\n", cert_path);
+  printf("[mTLS] Client key : %s\n", key_path);
+
   return 1;
 }
 

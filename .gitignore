@@ -1,2 +1,4 @@
 https/certs/*.key
 https/certs/ca.key
+https/certs/server.key
+https/certs/*.key

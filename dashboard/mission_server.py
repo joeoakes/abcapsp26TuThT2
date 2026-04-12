@@ -1,10 +1,16 @@
 import json
 import os
+import ssl
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 PORT = 8080
 MISSION_FILE = "/tmp/latest_mission.json"
 DASHBOARD_FILE = os.path.join(os.path.dirname(__file__), "Mission_Dashboard_HTML")
+
+CERT_FILE = os.environ.get("TLS_CERT", os.path.join(os.path.dirname(__file__),
+                           "../https/certs/server.crt"))
+KEY_FILE  = os.environ.get("TLS_KEY",  os.path.join(os.path.dirname(__file__),
+                           "../https/certs/server.key"))
 
 class MissionHandler(BaseHTTPRequestHandler):
 
@@ -74,14 +80,25 @@ class MissionHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if not os.path.exists(CERT_FILE):
+        print(f"[ERROR] TLS cert not found: {CERT_FILE}")
+        raise SystemExit(1)
+    if not os.path.exists(KEY_FILE):
+        print(f"[ERROR] TLS key not found: {KEY_FILE}")
+        raise SystemExit(1)
+
     server = HTTPServer(("0.0.0.0", PORT), MissionHandler)
-    print(f"[SERVER] Mission server running on http://0.0.0.0:{PORT}")
-    print(f"[SERVER] Dashboard: http://localhost:{PORT}/")
-    print(f"[SERVER] Mission endpoint: POST http://localhost:{PORT}/mission_end")
-    print(f"[SERVER] Latest data: GET http://localhost:{PORT}/latest_mission")
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
+    server.socket = ctx.wrap_socket(server.socket, server_side=True)
+
+    print(f"[SERVER] Mission server running on https://0.0.0.0:{PORT}")
+    print(f"[SERVER] Dashboard: https://localhost:{PORT}/")
+    print(f"[SERVER] Mission endpoint: POST https://localhost:{PORT}/mission_end")
+    print(f"[SERVER] Latest data: GET https://localhost:{PORT}/latest_mission")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n[SERVER] Shutting down.")
         server.server_close()
-

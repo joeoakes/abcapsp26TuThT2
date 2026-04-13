@@ -1,6 +1,9 @@
 // maze_https_redis.c
 // HTTPS server that stores maze static state and runtime updates in Redis
 // All posts go to /mission_end and are distinguished by "msg_type"
+//
+// mTLS: uses ai-server.crt + ai-server.key as server identity.
+// Clients (Game HAT) must present a cert signed by ca.crt to connect.
 
 #include <errno.h>
 #include <microhttpd.h>
@@ -14,9 +17,9 @@
 
 #define DEFAULT_PORT 8444
 
-static const char *ca_file   = "certs/ca.crt";
 static const char *cert_file = "certs/ai-server.crt";
 static const char *key_file  = "certs/ai-server.key";
+static const char *ca_file   = "certs/ca.crt";
 
 static redisContext *redis;
 
@@ -78,7 +81,7 @@ static int append_history_entry(const char *sid, cJSON *entry) {
     char *updated_json = NULL;
     int ok = 0;
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:history", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:history", sid);
     reply = redisCommand(redis, "GET %s", key);
 
     if (reply && reply->type == REDIS_REPLY_STRING && reply->str) {
@@ -122,21 +125,21 @@ static int init_runtime_keys(const char *sid, int start_x, int start_y) {
 
     snprintf(start_pos, sizeof(start_pos), "%d,%d", start_x, start_y);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:visited", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:visited", sid);
     reply = redisCommand(redis, "DEL %s", key);
     free_reply(reply);
     reply = redisCommand(redis, "SADD %s %s", key, start_pos);
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:history", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:history", sid);
     reply = redisCommand(redis, "SET %s %s", key, "[]");
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:plan", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:plan", sid);
     reply = redisCommand(redis, "SET %s %s", key, "[]");
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:plan_index", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:plan_index", sid);
     reply = redisCommand(redis, "SET %s %d", key, 0);
     free_reply(reply);
 
@@ -184,37 +187,37 @@ static int handle_maze_init(cJSON *root) {
         return 0;
     }
 
-    reply = redisCommand(redis, "SET team2ffmaze:latest_session_id %s", sid);
+    reply = redisCommand(redis, "SET team2ttmaze:latest_session_id %s", sid);
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:width", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:width", sid);
     reply = redisCommand(redis, "SET %s %d", key, width->valueint);
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:height", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:height", sid);
     reply = redisCommand(redis, "SET %s %d", key, height->valueint);
     free_reply(reply);
 
     char *cells_str = cJSON_PrintUnformatted(cells);
     if (!cells_str) return 0;
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:cells", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:cells", sid);
     reply = redisCommand(redis, "SET %s %s", key, cells_str);
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:start_x", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:start_x", sid);
     reply = redisCommand(redis, "SET %s %d", key, sx->valueint);
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:start_y", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:start_y", sid);
     reply = redisCommand(redis, "SET %s %d", key, sy->valueint);
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:goal_x", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:goal_x", sid);
     reply = redisCommand(redis, "SET %s %d", key, gx->valueint);
     free_reply(reply);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:goal_y", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:goal_y", sid);
     reply = redisCommand(redis, "SET %s %d", key, gy->valueint);
     free_reply(reply);
 
@@ -233,7 +236,7 @@ static int handle_maze_init(cJSON *root) {
             char sig_hex[32];
             snprintf(sig_hex, sizeof(sig_hex), "%016" PRIx64, sig);
 
-            snprintf(key, sizeof(key), "team2ffmaze:%s:maze_sig", sid);
+            snprintf(key, sizeof(key), "team2ttmaze:%s:maze_sig", sid);
             reply = redisCommand(redis, "SET %s %s", key, sig_hex);
             free_reply(reply);
 
@@ -275,7 +278,7 @@ static int handle_runtime_update(cJSON *root) {
 
     snprintf(pos, sizeof(pos), "%d,%d", x->valueint, y->valueint);
 
-    snprintf(key, sizeof(key), "team2ffmaze:%s:visited", sid);
+    snprintf(key, sizeof(key), "team2ttmaze:%s:visited", sid);
     reply = redisCommand(redis, "SADD %s %s", key, pos);
     free_reply(reply);
 
@@ -397,23 +400,23 @@ int main(void) {
         return 1;
     }
 
-    char *ca_pem   = read_file(ca_file);
     char *cert_pem = read_file(cert_file);
     char *key_pem  = read_file(key_file);
+    char *ca_pem   = read_file(ca_file);
 
-    if (!ca_pem || !cert_pem || !key_pem) {
+    if (!cert_pem || !key_pem || !ca_pem) {
         fprintf(stderr, "Failed to read TLS files.\n");
-        fprintf(stderr, "  ca.crt  : %s%s\n", ca_file,   ca_pem   ? " (ok)" : " *** NOT FOUND ***");
-        fprintf(stderr, "  cert    : %s%s\n", cert_file, cert_pem ? " (ok)" : " *** NOT FOUND ***");
-        fprintf(stderr, "  key     : %s%s\n", key_file,  key_pem  ? " (ok)" : " *** NOT FOUND ***");
-        fprintf(stderr, "Run generate_certs.sh then copy ca.crt + ai-server.{crt,key} here.\n");
-        free(ca_pem);
+        fprintf(stderr, "  cert: %s\n  key: %s\n  ca: %s\n", cert_file, key_file, ca_file);
+        fprintf(stderr, "Run generate_certs.sh and SCP certs to this device.\n");
         free(cert_pem);
         free(key_pem);
+        free(ca_pem);
         redisFree(redis);
         return 1;
     }
 
+    // mTLS: server presents ai-server.crt, requires clients to present
+    // a cert signed by ca.crt (MHD_OPTION_HTTPS_MEM_TRUST).
     struct MHD_Daemon *daemon = MHD_start_daemon(
         MHD_USE_THREAD_PER_CONNECTION | MHD_USE_TLS,
         DEFAULT_PORT,
@@ -421,27 +424,26 @@ int main(void) {
         &handle_post, NULL,
         MHD_OPTION_HTTPS_MEM_CERT,       cert_pem,
         MHD_OPTION_HTTPS_MEM_KEY,        key_pem,
-        /* mTLS — require clients to present a cert signed by our CA */
-        MHD_OPTION_HTTPS_MEM_TRUST_CERT, ca_pem,
+        MHD_OPTION_HTTPS_MEM_TRUST, ca_pem,
         MHD_OPTION_END
     );
 
     if (!daemon) {
         fprintf(stderr, "Failed to start HTTPS server\n");
-        free(ca_pem);
         free(cert_pem);
         free(key_pem);
+        free(ca_pem);
         redisFree(redis);
         return 1;
     }
 
     printf("========================================\n");
     printf("Database backend: Redis\n");
-    printf("mTLS: client certificates REQUIRED\n");
     printf("Redis host: localhost\n");
     printf("Redis port: 6379\n");
-    printf("Namespace: team2ffmaze\n");
+    printf("Namespace: team2ttmaze\n");
     printf("Endpoint: /mission_end\n");
+    printf("mTLS enabled — clients must present a cert signed by %s\n", ca_file);
     printf("msg_type values:\n");
     printf("  maze_init\n");
     printf("  runtime_update\n");
@@ -451,9 +453,9 @@ int main(void) {
     getchar();
 
     MHD_stop_daemon(daemon);
-    free(ca_pem);
     free(cert_pem);
     free(key_pem);
+    free(ca_pem);
     redisFree(redis);
 
     return 0;

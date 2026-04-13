@@ -7,8 +7,6 @@ Endpoints:
     POST /move          - Send movement commands {"move_dir": "forward/backward/left/right/stop"}
     GET  /camera        - Get latest JPEG frame from camera
     GET  /tags          - Get latest AprilTag detections (JSON)
-    GET  /odom          - Robot odometry (position + heading)
-    GET  /localization  - Robot position from reference cube
     GET  /health        - Health check
 
 Usage:
@@ -16,16 +14,8 @@ Usage:
     source ~/ros2_ws/install/setup.bash
     python3 ros2_https_controller.py
 
-mTLS cert layout (relative to this script's directory):
-    ../https/certs/ca.crt          ← CA that signed all device certs
-    ../https/certs/pupper-1.crt    ← This robot's server cert
-    ../https/certs/pupper-1.key    ← This robot's private key
-
-Override with env vars:
-    TLS_CA    = path to ca.crt
-    TLS_CERT  = path to this robot's .crt
-    TLS_KEY   = path to this robot's .key
-    LISTEN_PORT = port number (default 8444)
+mTLS: Expects per-device certs at certs/pupper-1.crt, certs/pupper-1.key, certs/ca.crt.
+Clients (Game HAT) must present a cert signed by ca.crt to connect.
 """
 
 import json
@@ -43,29 +33,21 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 
-# ---------------------------------------------------------------------------
-# Cert path resolution — absolute, based on this script's location so the
-# server starts correctly regardless of which directory you cd into first.
-# ---------------------------------------------------------------------------
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_CERTS_DIR  = os.path.join(_SCRIPT_DIR, "..", "https", "certs")
-_CERTS_DIR  = os.path.normpath(_CERTS_DIR)
-
 # Configuration
 HTTPS_PORT = int(os.environ.get("LISTEN_PORT", "8444"))
-CA_FILE    = os.environ.get("TLS_CA",   os.path.join(_CERTS_DIR, "ca.crt"))
-CERT_FILE  = os.environ.get("TLS_CERT", os.path.join(_CERTS_DIR, "pupper-1.crt"))
-KEY_FILE   = os.environ.get("TLS_KEY",  os.path.join(_CERTS_DIR, "pupper-1.key"))
+CERT_FILE  = os.environ.get("TLS_CERT", "certs/pupper-1.crt")
+KEY_FILE   = os.environ.get("TLS_KEY",  "certs/pupper-1.key")
+CA_FILE    = os.environ.get("TLS_CA",   "certs/ca.crt")
 
-DEFAULT_LINEAR_SPEED  = 0.15
+DEFAULT_LINEAR_SPEED = 0.15
 DEFAULT_ANGULAR_SPEED = 0.5
-SAFETY_TIMEOUT        = 5.0   # seconds — DO NOT lower; robot stops mid-move if < 5.0
-CMD_VEL_TOPIC         = "/cmd_vel"
-CAMERA_TOPIC          = "/camera/image_raw/compressed"
-APRILTAG_TOPIC        = "/apriltag/detections"
-LOCALIZATION_TOPIC    = "/apriltag/localization"
-ODOM_TOPIC            = "/odom"
-PUBLISH_RATE          = 10.0
+SAFETY_TIMEOUT = 5.0
+CMD_VEL_TOPIC = "/cmd_vel"
+CAMERA_TOPIC = "/camera/image_raw/compressed"
+APRILTAG_TOPIC = "/apriltag/detections"
+LOCALIZATION_TOPIC = "/apriltag/localization"
+ODOM_TOPIC = "/odom"
+PUBLISH_RATE = 10.0
 
 
 class PupperController(Node):
@@ -77,45 +59,57 @@ class PupperController(Node):
         self.get_logger().info(f"Publishing to {CMD_VEL_TOPIC}")
 
         # Camera subscriber
-        self._camera_lock  = threading.Lock()
+        self._camera_lock = threading.Lock()
         self._latest_frame = None
-        self._frame_count  = 0
+        self._frame_count = 0
         self.camera_sub = self.create_subscription(
-            CompressedImage, CAMERA_TOPIC, self._camera_callback, 10
+            CompressedImage,
+            CAMERA_TOPIC,
+            self._camera_callback,
+            10
         )
         self.get_logger().info(f"Subscribing to {CAMERA_TOPIC}")
 
         # AprilTag subscriber
-        self._tag_lock    = threading.Lock()
+        self._tag_lock = threading.Lock()
         self._latest_tags = '{"count":0,"tags":[]}'
         self.tag_sub = self.create_subscription(
-            String, APRILTAG_TOPIC, self._tag_callback, 10
+            String,
+            APRILTAG_TOPIC,
+            self._tag_callback,
+            10
         )
         self.get_logger().info(f"Subscribing to {APRILTAG_TOPIC}")
 
         # Odometry subscriber
-        self._odom_lock  = threading.Lock()
-        self._odom_x     = 0.0
-        self._odom_y     = 0.0
-        self._odom_yaw   = 0.0
+        self._odom_lock = threading.Lock()
+        self._odom_x = 0.0
+        self._odom_y = 0.0
+        self._odom_yaw = 0.0
         self._odom_valid = False
         self.odom_sub = self.create_subscription(
-            Odometry, ODOM_TOPIC, self._odom_callback, 10
+            Odometry,
+            ODOM_TOPIC,
+            self._odom_callback,
+            10
         )
         self.get_logger().info(f"Subscribing to {ODOM_TOPIC}")
 
         # Localization subscriber (from apriltag detector seeing reference cube)
-        self._loc_lock    = threading.Lock()
-        self._latest_loc  = '{"valid":false}'
+        self._loc_lock = threading.Lock()
+        self._latest_loc = '{"valid":false}'
         self.loc_sub = self.create_subscription(
-            String, LOCALIZATION_TOPIC, self._loc_callback, 10
+            String,
+            LOCALIZATION_TOPIC,
+            self._loc_callback,
+            10
         )
         self.get_logger().info(f"Subscribing to {LOCALIZATION_TOPIC}")
 
         # Velocity state
-        self._vel_lock          = threading.Lock()
-        self._linear_x          = 0.0
-        self._angular_z         = 0.0
+        self._vel_lock = threading.Lock()
+        self._linear_x = 0.0
+        self._angular_z = 0.0
         self._last_command_time = time.time()
 
         # Publish velocity at steady rate
@@ -131,17 +125,21 @@ class PupperController(Node):
             self._latest_tags = msg.data
 
     def _odom_callback(self, msg):
-        x  = msg.pose.pose.position.x
-        y  = msg.pose.pose.position.y
+        # Extract position
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+
+        # Convert quaternion to yaw (heading in degrees)
         qz = msg.pose.pose.orientation.z
         qw = msg.pose.pose.orientation.w
-        # Yaw from quaternion (ground robot — only z rotation)
+        # Yaw from quaternion (only z rotation for ground robot)
         yaw_rad = 2.0 * math.atan2(qz, qw)
         yaw_deg = math.degrees(yaw_rad)
+
         with self._odom_lock:
-            self._odom_x     = x
-            self._odom_y     = y
-            self._odom_yaw   = yaw_deg
+            self._odom_x = x
+            self._odom_y = y
+            self._odom_yaw = yaw_deg
             self._odom_valid = True
 
     def get_latest_frame(self):
@@ -160,9 +158,9 @@ class PupperController(Node):
         with self._odom_lock:
             return {
                 "valid": self._odom_valid,
-                "x":     round(self._odom_x, 4),
-                "y":     round(self._odom_y, 4),
-                "yaw":   round(self._odom_yaw, 1)
+                "x": round(self._odom_x, 4),
+                "y": round(self._odom_y, 4),
+                "yaw": round(self._odom_yaw, 1)
             }
 
     def _loc_callback(self, msg):
@@ -175,25 +173,25 @@ class PupperController(Node):
 
     def set_velocity(self, linear_x, angular_z):
         with self._vel_lock:
-            self._linear_x          = linear_x
-            self._angular_z         = angular_z
+            self._linear_x = linear_x
+            self._angular_z = angular_z
             self._last_command_time = time.time()
 
     def stop(self):
         with self._vel_lock:
-            self._linear_x  = 0.0
+            self._linear_x = 0.0
             self._angular_z = 0.0
 
     def _publish_velocity(self):
         with self._vel_lock:
             elapsed = time.time() - self._last_command_time
             if elapsed > SAFETY_TIMEOUT and (self._linear_x != 0.0 or self._angular_z != 0.0):
-                self.get_logger().warn("Safety timeout — stopping robot")
-                self._linear_x  = 0.0
+                self.get_logger().warn("Safety timeout - stopping robot")
+                self._linear_x = 0.0
                 self._angular_z = 0.0
 
             msg = Twist()
-            msg.linear.x  = self._linear_x
+            msg.linear.x = self._linear_x
             msg.angular.z = self._angular_z
 
         self.publisher.publish(msg)
@@ -255,7 +253,8 @@ class MoveHandler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
         elif self.path == "/odom":
-            self._send_json(200, _ros_node.get_odom())
+            odom_data = _ros_node.get_odom()
+            self._send_json(200, odom_data)
 
         elif self.path == "/localization":
             loc_json = _ros_node.get_latest_localization()
@@ -270,8 +269,8 @@ class MoveHandler(BaseHTTPRequestHandler):
 
         elif self.path == "/health":
             self._send_json(200, {
-                "ok":            True,
-                "node":          "pupper_https_controller",
+                "ok": True,
+                "node": "pupper_https_controller",
                 "camera_frames": _ros_node.get_frame_count()
             })
 
@@ -279,12 +278,12 @@ class MoveHandler(BaseHTTPRequestHandler):
             self._send_json(200, {
                 "service": "Mini-Pupper HTTPS ROS2 Controller",
                 "endpoints": {
-                    "POST /move":        "Movement commands",
-                    "GET /camera":       "Latest JPEG frame",
-                    "GET /tags":         "Latest AprilTag detections",
-                    "GET /odom":         "Robot odometry (position + heading)",
+                    "POST /move": "Movement commands",
+                    "GET /camera": "Latest JPEG frame",
+                    "GET /tags": "Latest AprilTag detections",
+                    "GET /odom": "Robot odometry (position + heading)",
                     "GET /localization": "Robot position from reference cube",
-                    "GET /health":       "Health check"
+                    "GET /health": "Health check"
                 }
             })
 
@@ -310,10 +309,10 @@ class MoveHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "Missing 'move_dir' field"})
             return
 
-        linear_speed  = float(data.get("linear_speed",  DEFAULT_LINEAR_SPEED))
+        linear_speed = float(data.get("linear_speed", DEFAULT_LINEAR_SPEED))
         angular_speed = float(data.get("angular_speed", DEFAULT_ANGULAR_SPEED))
 
-        linear_x  = 0.0
+        linear_x = 0.0
         angular_z = 0.0
 
         if move_dir == "forward":
@@ -332,9 +331,9 @@ class MoveHandler(BaseHTTPRequestHandler):
 
         _ros_node.set_velocity(linear_x, angular_z)
         self._send_json(200, {
-            "ok":        True,
-            "move_dir":  move_dir,
-            "linear_x":  linear_x,
+            "ok": True,
+            "move_dir": move_dir,
+            "linear_x": linear_x,
             "angular_z": angular_z
         })
 
@@ -355,31 +354,19 @@ class ThreadedHTTPServer(HTTPServer):
             self.shutdown_request(request)
 
 
-def run_https_server(port, ca_file, certfile, keyfile):
+def run_https_server(port, certfile, keyfile, cafile):
     server = ThreadedHTTPServer(("0.0.0.0", port), MoveHandler)
 
-    # ------------------------------------------------------------------
-    # mTLS — both sides authenticate with X.509 certs signed by our CA.
-    #
-    #   ctx.verify_mode = ssl.CERT_REQUIRED
-    #       → server rejects any client that doesn't present a cert
-    #         signed by ca.crt (e.g. Game HAT must present gamehat.crt)
-    #
-    #   ctx.load_verify_locations(ca_file)
-    #       → only trust certs signed by our own CA
-    # ------------------------------------------------------------------
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
-    ctx.load_verify_locations(cafile=ca_file)
-    ctx.verify_mode = ssl.CERT_REQUIRED   # ← enforces mTLS client identity
+    ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)  # pupper-1 identity
+    ctx.verify_mode = ssl.CERT_REQUIRED                      # require client cert
+    ctx.load_verify_locations(cafile=cafile)                 # trust only our CA
 
     server.socket = ctx.wrap_socket(server.socket, server_side=True)
 
-    print(f"[HTTPS] mTLS listening on https://0.0.0.0:{port}")
-    print(f"[HTTPS] Server cert : {certfile}")
-    print(f"[HTTPS] CA trust    : {ca_file}")
-    print(f"[HTTPS] Client certs: REQUIRED (signed by CA above)")
-    print(f"[HTTPS] POST /move          - Movement commands")
+    print(f"[HTTPS] Listening on https://0.0.0.0:{port}")
+    print(f"[HTTPS] mTLS enabled — clients must present a cert signed by {cafile}")
+    print(f"[HTTPS] POST /move         - Movement commands")
     print(f"[HTTPS] GET  /camera        - Latest JPEG frame")
     print(f"[HTTPS] GET  /tags          - AprilTag detections")
     print(f"[HTTPS] GET  /odom          - Robot odometry")
@@ -388,39 +375,21 @@ def run_https_server(port, ca_file, certfile, keyfile):
     server.serve_forever()
 
 
-def _check_cert_files():
-    """Verify all three cert files exist before starting; print clear errors."""
-    missing = []
-    for label, path in [("CA cert", CA_FILE), ("Server cert", CERT_FILE), ("Server key", KEY_FILE)]:
-        if not os.path.exists(path):
-            missing.append(f"  {label}: {path}")
-    if missing:
-        print("[ERROR] Missing TLS files:")
-        for m in missing:
-            print(m)
-        print()
-        print("  Run generate_certs.sh on your laptop, then copy to this robot:")
-        print(f"    scp ca.crt pupper-1.crt pupper-1.key ubuntu@<pupper-ip>:{_CERTS_DIR}/")
-        print()
-        print("  Or override paths with env vars:")
-        print("    TLS_CA=/path/to/ca.crt TLS_CERT=/path/to/pupper-1.crt TLS_KEY=/path/to/pupper-1.key \\")
-        print("    python3 ros2_https_controller.py")
-        return False
-    return True
-
-
 def main():
     global _ros_node
 
-    if not _check_cert_files():
-        return
+    for label, path in [("TLS cert", CERT_FILE), ("TLS key", KEY_FILE), ("CA cert", CA_FILE)]:
+        if not os.path.exists(path):
+            print(f"[ERROR] {label} not found: {path}")
+            print(f"[ERROR] Run generate_certs.sh and SCP certs to this device.")
+            return
 
     rclpy.init()
     _ros_node = PupperController()
 
     https_thread = threading.Thread(
         target=run_https_server,
-        args=(HTTPS_PORT, CA_FILE, CERT_FILE, KEY_FILE),
+        args=(HTTPS_PORT, CERT_FILE, KEY_FILE, CA_FILE),
         daemon=True
     )
     https_thread.start()

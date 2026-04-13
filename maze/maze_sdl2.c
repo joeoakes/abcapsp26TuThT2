@@ -1,6 +1,6 @@
 // maze_sdl2.c
 // SDL2 maze + HTTPS telemetry + full mission JSON reporting + robot control
-// mTLS client: presents gamehat.crt signed by project CA on every outbound call.
+// mTLS enabled: Game HAT presents gamehat.crt to all servers.
 // Press P to toggle Mini-Pupper robot control on/off.
 
 #include <SDL2/SDL.h>
@@ -23,24 +23,15 @@
 #define CELL   32
 #define PAD    16
 
-#define TELEMETRY_URL "https://10.170.8.130:8444/move"
-#define AI_MISSION_URL "https://10.170.8.109:8444/mission_end"
-#define LOCAL_MISSION_URL "http://localhost:8080/mission_end"
-#define DEVICE_ID "mini-pupper-01"
+#define TELEMETRY_URL     "https://10.170.8.130:8444/move"
+#define AI_MISSION_URL    "https://10.170.8.109:8444/mission_end"
+#define LOCAL_MISSION_URL "https://localhost:8080/mission_end"
+#define DEVICE_ID         "mini-pupper-01"
 
-/*
- * mTLS cert paths for the Game HAT (client side).
- * Override any of these with env vars if your working directory differs:
- *   TLS_CA   — path to the shared CA cert (ca.crt)
- *   TLS_CERT — path to the Game HAT client cert (gamehat.crt)
- *   TLS_KEY  — path to the Game HAT client key  (gamehat.key)
- *
- * Default paths assume you run from the repo root:
- *   ~/abcapsp26TuThT2/
- */
-#define DEFAULT_CA_PATH   "https/certs/ca.crt"
-#define DEFAULT_CERT_PATH "https/certs/gamehat.crt"
-#define DEFAULT_KEY_PATH  "https/certs/gamehat.key"
+/* mTLS cert paths — relative to maze/ working directory */
+#define GAMEHAT_CERT "../https/certs/gamehat.crt"
+#define GAMEHAT_KEY  "../https/certs/gamehat.key"
+#define CA_CERT      "../https/certs/ca.crt"
 
 /* Robot control config */
 #define DEFAULT_ROBOT_IP "10.170.8.136"
@@ -358,38 +349,27 @@ static size_t write_devnull(void* p, size_t s, size_t n, void* u) {
   return s * n;
 }
 
+/* Apply mTLS options to any curl handle.
+   All outbound connections present gamehat.crt and verify server certs
+   against our CA. */
+static void apply_mtls(CURL* handle) {
+  curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 2L);
+  curl_easy_setopt(handle, CURLOPT_CAINFO,  CA_CERT);
+  curl_easy_setopt(handle, CURLOPT_SSLCERT, GAMEHAT_CERT);
+  curl_easy_setopt(handle, CURLOPT_SSLKEY,  GAMEHAT_KEY);
+}
+
 static int telemetry_init(void){
   if(curl_global_init(CURL_GLOBAL_DEFAULT)!=0) return 0;
   g_curl=curl_easy_init();
   if(!g_curl) return 0;
 
-  /* Resolve cert paths — env vars override defaults */
-  const char* ca_path   = getenv("TLS_CA");   if (!ca_path)   ca_path   = DEFAULT_CA_PATH;
-  const char* cert_path = getenv("TLS_CERT"); if (!cert_path) cert_path = DEFAULT_CERT_PATH;
-  const char* key_path  = getenv("TLS_KEY");  if (!key_path)  key_path  = DEFAULT_KEY_PATH;
-
-  /* mTLS client identity — Game HAT presents gamehat.crt on every request.
-   * The server (pupper, logger, AI) will reject the connection if this cert
-   * is not signed by the shared project CA (ca.crt). */
-  curl_easy_setopt(g_curl, CURLOPT_SSLCERT,      cert_path);
-  curl_easy_setopt(g_curl, CURLOPT_SSLKEY,        key_path);
-
-  /* Server verification — re-enabled; validates server cert against our CA.
-   * CURLOPT_SSL_VERIFYHOST 2L = check that the cert CN/SAN matches hostname. */
-  curl_easy_setopt(g_curl, CURLOPT_CAINFO,        ca_path);
-  curl_easy_setopt(g_curl, CURLOPT_SSL_VERIFYPEER, 1L);
-  curl_easy_setopt(g_curl, CURLOPT_SSL_VERIFYHOST, 2L);
-
-  curl_easy_setopt(g_curl, CURLOPT_POST,           1L);
-  curl_easy_setopt(g_curl, CURLOPT_TIMEOUT,        2L);
-  curl_easy_setopt(g_curl, CURLOPT_CONNECTTIMEOUT, 1L);
-  curl_easy_setopt(g_curl, CURLOPT_WRITEFUNCTION,  write_devnull);
-
-  /* Confirm cert paths at startup so missing files are caught early */
-  printf("[mTLS] CA cert  : %s\n", ca_path);
-  printf("[mTLS] Client cert: %s\n", cert_path);
-  printf("[mTLS] Client key : %s\n", key_path);
-
+  curl_easy_setopt(g_curl,CURLOPT_POST,1L);
+  apply_mtls(g_curl);
+  curl_easy_setopt(g_curl,CURLOPT_TIMEOUT,2L);
+  curl_easy_setopt(g_curl,CURLOPT_CONNECTTIMEOUT,1L);
+  curl_easy_setopt(g_curl,CURLOPT_WRITEFUNCTION,write_devnull);
   return 1;
 }
 
@@ -611,8 +591,7 @@ static bool robot_get_odom(double* out_yaw, double* out_x, double* out_y) {
   curl_easy_setopt(odom_curl, CURLOPT_HTTPGET, 1L);
   curl_easy_setopt(odom_curl, CURLOPT_TIMEOUT, 1L);
   curl_easy_setopt(odom_curl, CURLOPT_CONNECTTIMEOUT, 1L);
-  curl_easy_setopt(odom_curl, CURLOPT_SSL_VERIFYPEER, 0L);
-  curl_easy_setopt(odom_curl, CURLOPT_SSL_VERIFYHOST, 0L);
+  apply_mtls(odom_curl);
   curl_easy_setopt(odom_curl, CURLOPT_WRITEFUNCTION, response_write);
   curl_easy_setopt(odom_curl, CURLOPT_WRITEDATA, &resp);
 
@@ -759,8 +738,7 @@ static bool overhead_get_robot(double* out_yaw, double* out_x, double* out_y) {
   curl_easy_setopt(cam_curl, CURLOPT_HTTPGET, 1L);
   curl_easy_setopt(cam_curl, CURLOPT_TIMEOUT, 1L);
   curl_easy_setopt(cam_curl, CURLOPT_CONNECTTIMEOUT, 1L);
-  curl_easy_setopt(cam_curl, CURLOPT_SSL_VERIFYPEER, 0L);
-  curl_easy_setopt(cam_curl, CURLOPT_SSL_VERIFYHOST, 0L);
+  apply_mtls(cam_curl);
   curl_easy_setopt(cam_curl, CURLOPT_WRITEFUNCTION, response_write);
   curl_easy_setopt(cam_curl, CURLOPT_WRITEDATA, &resp);
 
@@ -817,8 +795,7 @@ static bool robot_get_self_localization(double* out_heading, double* out_dist, d
   curl_easy_setopt(loc_curl, CURLOPT_HTTPGET, 1L);
   curl_easy_setopt(loc_curl, CURLOPT_TIMEOUT, 1L);
   curl_easy_setopt(loc_curl, CURLOPT_CONNECTTIMEOUT, 1L);
-  curl_easy_setopt(loc_curl, CURLOPT_SSL_VERIFYPEER, 0L);
-  curl_easy_setopt(loc_curl, CURLOPT_SSL_VERIFYHOST, 0L);
+  apply_mtls(loc_curl);
   curl_easy_setopt(loc_curl, CURLOPT_WRITEFUNCTION, response_write);
   curl_easy_setopt(loc_curl, CURLOPT_WRITEDATA, &resp);
 
@@ -1157,6 +1134,7 @@ int main(int argc, char* argv[]){
 
   printf("[MAZE] Robot URL: %s\n", g_robot_url);
   printf("[MAZE] Robot odom: https://%s:%d/odom\n", robot_ip, ROBOT_PORT);
+  printf("[MAZE] mTLS: presenting %s, trusting %s\n", GAMEHAT_CERT, CA_CERT);
   printf("[MAZE] Press P to toggle robot control (currently OFF)\n");
   printf("[MAZE] Press SPACE to toggle A* auto-solve\n");
 
@@ -1360,6 +1338,6 @@ int main(int argc, char* argv[]){
   SDL_DestroyWindow(win);
   telemetry_shutdown();
   SDL_Quit();
-  system("xinit /usr/bin/chromium-browser --kiosk --no-sandbox --disable-infobars http://localhost:8080/ -- :0");
+  system("xinit /usr/bin/chromium-browser --kiosk --no-sandbox --disable-infobars https://localhost:8080/ -- :0");
   return 0;
 }
